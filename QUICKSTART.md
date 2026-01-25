@@ -78,7 +78,7 @@ echo ".standup/" >> .gitignore
 standup
 ```
 
-Three Windows Terminal windows will open!
+Four Windows Terminal windows will open!
 
 ## What Happens Next?
 
@@ -215,13 +215,15 @@ cd opencode-standup
 
 **You:** Good morning! Let's start standup.
 
-**Developer:** Good morning! Checking notifications... No urgent items. Yesterday I completed the user authentication feature and created unit tests. Today I'm planning to work on the password reset functionality. Any blockers? No blockers currently.
+**Architect:** Good morning! Checking notifications... No urgent items. Yesterday I reviewed the authentication architecture and documented our decision to use JWT with refresh tokens. Today I'm planning to review the password reset flow design and ensure it follows security best practices. I recommend we use email-based password reset with time-limited tokens (15 min expiry). No blockers.
+
+**Developer:** Good morning! Checking notifications... Noted architect's recommendation on JWT tokens. Yesterday I completed the user authentication feature using JWT as recommended and created unit tests. Today I'm planning to work on the password reset functionality following the architect's security guidelines. Any blockers? No blockers currently.
 
 **QA:** Good morning! No urgent notifications. Yesterday I tested the authentication feature and found one minor UI issue (logged as bug #42). Today I'll continue testing and will start on the password reset feature once it's ready. No blockers.
 
 **Code Reviewer:** Good morning! Checked notifications - all clear. Yesterday I reviewed PR #15 (authentication feature) and approved it after the developer addressed my feedback on error handling. Today I'll review any new PRs and focus on security review for the authentication system. No blockers.
 
-**You:** Great! Developer, please start on password reset. QA, please verify bug #42 is logged correctly. Reviewer, let me know what you find in the security review.
+**You:** Great! Architect, can you create a design doc for the password reset flow? Developer, please start on password reset implementation following architect's guidelines. QA, please verify bug #42 is logged correctly. Reviewer, let me know what you find in the security review.
 
 ---
 

@@ -80,7 +80,7 @@ echo -e "${BLUE}Installing OpenCode skills...${NC}"
 
 SKILLS_UPDATED=0
 
-for skill in developer qa-engineer code-reviewer; do
+for skill in architect developer qa-engineer code-reviewer; do
     skill_path="$SKILLS_DIR/$skill"
     
     if [[ -f "$skill_path/SKILL.md" ]]; then

@@ -53,13 +53,14 @@ done
 
 # Agent definitions (role → display name)
 declare -A AGENTS=(
+    ["architect"]="Architect (System Designer)"
     ["developer"]="Developer (Bug Fixer)"
     ["qa-engineer"]="QA Engineer"
     ["code-reviewer"]="Code Reviewer"
 )
 
 # Agent order for launch
-AGENT_ORDER=("developer" "qa-engineer" "code-reviewer")
+AGENT_ORDER=("architect" "developer" "qa-engineer" "code-reviewer")
 
 # Check dependencies
 check_dependencies() {

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Architect agent** (v1.1.0)
+  - System architecture and design pattern guidance
+  - Infrastructure and deployment recommendations
+  - Best practices enforcement (SOLID, security, performance)
+  - Technology stack guidance
+  - Web hosting platform recommendations (AWS, Vercel, Railway, etc.)
+  - Guides developer on architectural implementations
+  - Maintains big picture and prevents technical debt
+
 ### Planned
 
 - Slack/Discord integration for notifications

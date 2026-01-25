@@ -2,13 +2,14 @@
 
 > AI-powered standup meetings for your development team
 
-Automate your daily standups with three specialized AI agents that work together to manage development, QA, and code review tasks across all your projects.
+Automate your daily standups with four specialized AI agents that work together to manage architecture, development, QA, and code review tasks across all your projects.
 
 ![OpenCode Standup Demo](https://via.placeholder.com/800x400?text=OpenCode+Standup+Demo)
 
 ## Features
 
-- 🤖 **Three Specialized AI Agents**
+- 🤖 **Four Specialized AI Agents**
+  - **Architect** - Designs system architecture, ensures best practices, and guides technical decisions
   - **Developer** - Implements features and fixes bugs
   - **QA Engineer** - Tests features and identifies issues
   - **Code Reviewer** - Reviews code quality and suggests improvements
@@ -24,7 +25,7 @@ Automate your daily standups with three specialized AI agents that work together
   - Independent sessions per project
 
 - 💻 **Automatic Terminal Management**
-  - Launches 3 separate Windows Terminal windows
+  - Launches 4 separate Windows Terminal windows
   - Persistent sessions (resume anytime)
   - Session naming: `<project>-<role>-<date>`
 
@@ -140,7 +141,7 @@ standup
 
 | Command | Description |
 |---------|-------------|
-| `standup` | Launch all three agents in separate windows |
+| `standup` | Launch all four agents in separate windows |
 | `standup-metrics` | View team performance dashboard |
 | `standup-summary` | Generate daily summary report |
 | `standup-pr-status` | Check PR status (requires `gh` CLI) |
@@ -162,6 +163,31 @@ standup-pr-status
 ```
 
 ## Agent Capabilities
+
+### Architect Agent
+
+**Responsibilities:**
+- Design system architecture and infrastructure
+- Ensure industry-standard design patterns are followed
+- Guide technical decisions on scalability, security, and maintainability
+- Direct developer on architectural implementations
+- Review technical decisions and propose improvements
+- Document architecture decisions and rationale
+- Identify and address technical debt
+
+**Skills:**
+- System design and architecture patterns
+- Infrastructure and deployment strategies (AWS, Vercel, Railway, etc.)
+- Best practices (SOLID, security, performance, scalability)
+- Technology stack guidance
+- Code organization and project structure
+- Web hosting and cloud platform recommendations
+
+**Key Focus:**
+- Maintains the big picture of the project
+- Guides developer with architectural wisdom
+- Ensures scalable and maintainable solutions
+- Prevents technical debt before it accumulates
 
 ### Developer Agent
 
