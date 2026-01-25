@@ -1,0 +1,297 @@
+#!/bin/bash
+# Standup Metrics Dashboard
+# Analyzes agent activity and generates statistics
+
+set -e
+
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+STANDUP_DIR="$PROJECT_ROOT/.standup"
+
+# Color codes
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# Agent display names
+declare -A AGENT_NAMES=(
+    ["developer"]="👨‍💻 Developer"
+    ["qa-engineer"]="🧪 QA Engineer"
+    ["code-reviewer"]="👀 Code Reviewer"
+)
+
+# Parse tasks.json and generate metrics
+generate_metrics() {
+    local role=$1
+    local tasks_file="$STANDUP_DIR/$role/tasks.json"
+    
+    if [[ ! -f "$tasks_file" ]]; then
+        echo "0 0 0 0 0"
+        return
+    fi
+    
+    local total=$(jq '.tasks | length' "$tasks_file" 2>/dev/null || echo 0)
+    local completed=$(jq '[.tasks[] | select(.status == "completed")] | length' "$tasks_file" 2>/dev/null || echo 0)
+    local in_progress=$(jq '[.tasks[] | select(.status == "in-progress")] | length' "$tasks_file" 2>/dev/null || echo 0)
+    local blocked=$(jq '[.tasks[] | select(.status == "blocked")] | length' "$tasks_file" 2>/dev/null || echo 0)
+    local todo=$(jq '[.tasks[] | select(.status == "todo")] | length' "$tasks_file" 2>/dev/null || echo 0)
+    
+    echo "$total $completed $in_progress $blocked $todo"
+}
+
+# Get high priority tasks
+get_high_priority_tasks() {
+    local role=$1
+    local tasks_file="$STANDUP_DIR/$role/tasks.json"
+    
+    if [[ ! -f "$tasks_file" ]]; then
+        echo 0
+        return
+    fi
+    
+    jq '[.tasks[] | select(.priority == "critical" or .priority == "high") | select(.status != "completed")] | length' "$tasks_file" 2>/dev/null || echo 0
+}
+
+# Calculate date range for logs
+get_date_range() {
+    local days=${1:-7}
+    local dates=()
+    
+    for i in $(seq 0 $((days-1))); do
+        dates+=("$(date -d "$i days ago" +%Y-%m-%d 2>/dev/null || date -v-${i}d +%Y-%m-%d 2>/dev/null)")
+    done
+    
+    echo "${dates[@]}"
+}
+
+# Count log entries for date range
+count_log_activity() {
+    local role=$1
+    shift
+    local dates=("$@")
+    local count=0
+    
+    for date in "${dates[@]}"; do
+        local log_file="$STANDUP_DIR/$role/log-$date.md"
+        if [[ -f "$log_file" ]]; then
+            # Count work session sections (indicated by ## headers, excluding the standup header)
+            local entries=$(grep -c "^## " "$log_file" 2>/dev/null || echo 0)
+            # Subtract 1 for the standup header that's always there
+            entries=$((entries > 0 ? entries - 1 : 0))
+            count=$((count + entries))
+        fi
+    done
+    
+    echo "$count"
+}
+
+# Check for urgent notifications
+check_urgent_notifications() {
+    local notif_file="$STANDUP_DIR/notifications.md"
+    if [[ -f "$notif_file" ]]; then
+        # Count urgent headers, excluding the template one
+        local urgent=$(grep "^## 🔴 URGENT" "$notif_file" 2>/dev/null | wc -l)
+        # Count actual urgent messages (lines starting with **)
+        local urgent_msgs=$(awk '/^## 🔴 URGENT/,/^## / {if (/^\*\*\[/) print}' "$notif_file" 2>/dev/null | wc -l)
+        echo "$urgent_msgs"
+    else
+        echo 0
+    fi
+}
+
+# Check for important notifications
+check_important_notifications() {
+    local notif_file="$STANDUP_DIR/notifications.md"
+    if [[ -f "$notif_file" ]]; then
+        local important=$(awk '/^## 🟡 IMPORTANT/,/^## / {if (/^\*\*\[/) print}' "$notif_file" 2>/dev/null | wc -l)
+        echo "$important"
+    else
+        echo 0
+    fi
+}
+
+# Show agent metrics
+show_agent_metrics() {
+    local role=$1
+    local days=$2
+    
+    echo -e "${BLUE}${BOLD}${AGENT_NAMES[$role]}${NC}"
+    
+    # Get task metrics
+    read -r total completed in_progress blocked todo <<< $(generate_metrics "$role")
+    
+    # Get activity count
+    local dates=($(get_date_range $days))
+    local activity=$(count_log_activity "$role" "${dates[@]}")
+    
+    # Get high priority count
+    local high_priority=$(get_high_priority_tasks "$role")
+    
+    # Display metrics
+    if [[ $total -eq 0 ]]; then
+        echo -e "  ${YELLOW}No tasks yet${NC}"
+    else
+        echo -e "  Tasks: ${GREEN}$completed completed${NC} | ${YELLOW}$in_progress in progress${NC} | ${BLUE}$todo todo${NC}"
+        if [[ $blocked -gt 0 ]]; then
+            echo -e "        ${RED}$blocked blocked${NC} | $total total"
+        else
+            echo -e "        $total total"
+        fi
+        
+        if [[ $high_priority -gt 0 ]]; then
+            echo -e "  ${RED}${BOLD}⚠️  $high_priority high-priority tasks pending${NC}"
+        fi
+    fi
+    
+    echo -e "  Activity: $activity work sessions in last $days days"
+    echo
+}
+
+# Main dashboard display
+show_dashboard() {
+    local days=${1:-7}
+    
+    clear
+    echo -e "${BOLD}╔════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}║        AI Team Standup - Metrics Dashboard            ║${NC}"
+    echo -e "${BOLD}║        Last $days days                                      ║${NC}"
+    echo -e "${BOLD}╚════════════════════════════════════════════════════════╝${NC}"
+    echo
+    
+    # Check for notifications
+    local urgent=$(check_urgent_notifications)
+    local important=$(check_important_notifications)
+    
+    if [[ $urgent -gt 0 ]]; then
+        echo -e "${RED}${BOLD}🚨 $urgent URGENT NOTIFICATION(S)${NC} - Check .standup/notifications.md"
+        echo
+    fi
+    
+    if [[ $important -gt 0 ]]; then
+        echo -e "${YELLOW}${BOLD}📌 $important IMPORTANT NOTIFICATION(S)${NC} - Check .standup/notifications.md"
+        echo
+    fi
+    
+    # Show each agent's metrics
+    for role in developer qa-engineer code-reviewer; do
+        show_agent_metrics "$role" "$days"
+    done
+    
+    # Overall team stats
+    echo -e "${BOLD}═══════════════════════════════════════════════════════${NC}"
+    echo -e "${BOLD}Team Summary${NC}"
+    echo
+    
+    # Calculate overall stats
+    local overall_total=0
+    local overall_completed=0
+    local overall_in_progress=0
+    local overall_blocked=0
+    local overall_high_priority=0
+    
+    for role in developer qa-engineer code-reviewer; do
+        read -r total completed in_progress blocked todo <<< $(generate_metrics "$role")
+        overall_total=$((overall_total + total))
+        overall_completed=$((overall_completed + completed))
+        overall_in_progress=$((overall_in_progress + in_progress))
+        overall_blocked=$((overall_blocked + blocked))
+        
+        local high_pri=$(get_high_priority_tasks "$role")
+        overall_high_priority=$((overall_high_priority + high_pri))
+    done
+    
+    echo -e "${GREEN}${BOLD}✓ $overall_completed tasks completed${NC}"
+    echo -e "${YELLOW}⏳ $overall_in_progress tasks in progress${NC}"
+    
+    if [[ $overall_blocked -gt 0 ]]; then
+        echo -e "${RED}${BOLD}🚫 $overall_blocked tasks blocked${NC}"
+    fi
+    
+    if [[ $overall_high_priority -gt 0 ]]; then
+        echo -e "${RED}${BOLD}⚠️  $overall_high_priority high-priority tasks pending${NC}"
+    fi
+    
+    echo
+    echo -e "${BOLD}Total: $overall_total tasks tracked${NC}"
+    echo
+}
+
+# Export metrics to JSON
+export_json() {
+    local output_file="${1:-.standup/metrics.json}"
+    
+    local developer_tasks=$(cat "$STANDUP_DIR/developer/tasks.json" 2>/dev/null || echo '{"tasks":[]}')
+    local qa_tasks=$(cat "$STANDUP_DIR/qa-engineer/tasks.json" 2>/dev/null || echo '{"tasks":[]}')
+    local reviewer_tasks=$(cat "$STANDUP_DIR/code-reviewer/tasks.json" 2>/dev/null || echo '{"tasks":[]}')
+    
+    # Count activity
+    local dates=($(get_date_range 7))
+    local dev_activity=$(count_log_activity "developer" "${dates[@]}")
+    local qa_activity=$(count_log_activity "qa-engineer" "${dates[@]}")
+    local reviewer_activity=$(count_log_activity "code-reviewer" "${dates[@]}")
+    
+    cat > "$output_file" <<EOF
+{
+  "generated": "$(date -Iseconds)",
+  "project": "$(basename "$PROJECT_ROOT")",
+  "agents": {
+    "developer": {
+      "tasks": $developer_tasks,
+      "activityLast7Days": $dev_activity
+    },
+    "qa-engineer": {
+      "tasks": $qa_tasks,
+      "activityLast7Days": $qa_activity
+    },
+    "code-reviewer": {
+      "tasks": $reviewer_tasks,
+      "activityLast7Days": $reviewer_activity
+    }
+  },
+  "notifications": {
+    "urgent": $(check_urgent_notifications),
+    "important": $(check_important_notifications)
+  }
+}
+EOF
+    
+    echo -e "${GREEN}Metrics exported to $output_file${NC}"
+}
+
+# Show help
+show_help() {
+    echo "Standup Metrics Dashboard"
+    echo
+    echo "Usage: $0 [command] [options]"
+    echo
+    echo "Commands:"
+    echo "  show [days]   Display metrics dashboard (default: 7 days)"
+    echo "  json [file]   Export metrics to JSON (default: .standup/metrics.json)"
+    echo "  help          Show this help message"
+    echo
+    echo "Examples:"
+    echo "  $0              # Show dashboard for last 7 days"
+    echo "  $0 show 30      # Show dashboard for last 30 days"
+    echo "  $0 json         # Export metrics to JSON"
+    echo
+}
+
+# Parse command
+case "${1:-show}" in
+    show)
+        show_dashboard "${2:-7}"
+        ;;
+    json)
+        export_json "$2"
+        ;;
+    help|-h|--help)
+        show_help
+        ;;
+    *)
+        echo -e "${RED}Unknown command: $1${NC}"
+        echo "Use 'help' for usage information"
+        exit 1
+        ;;
+esac

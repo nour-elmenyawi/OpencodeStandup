@@ -1,0 +1,380 @@
+#!/bin/bash
+# AI Standup System - Launches specialized OpenCode agents for team standup
+# Usage: ./bin/standup [--project-name <name>]
+
+set -e
+
+# Colors for output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# Determine project root and name
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+PROJECT_NAME_DEFAULT="$(basename "$PROJECT_ROOT")"
+STANDUP_DIR="$PROJECT_ROOT/.standup"
+TODAY=$(date +%Y-%m-%d)
+TIME=$(date +%H:%M)
+
+# Parse arguments
+PROJECT_NAME="$PROJECT_NAME_DEFAULT"
+FIRST_RUN=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --project-name)
+            PROJECT_NAME="$2"
+            shift 2
+            ;;
+        --first-run)
+            FIRST_RUN=true
+            shift
+            ;;
+        -h|--help)
+            echo "AI Standup System"
+            echo "Usage: $0 [options]"
+            echo ""
+            echo "Options:"
+            echo "  --project-name <name>  Override project name (default: directory name)"
+            echo "  --first-run           Run first-time setup wizard"
+            echo "  -h, --help            Show this help message"
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Unknown option: $1${NC}"
+            echo "Use -h for help"
+            exit 1
+            ;;
+    esac
+done
+
+# Agent definitions (role → display name)
+declare -A AGENTS=(
+    ["developer"]="Developer (Bug Fixer)"
+    ["qa-engineer"]="QA Engineer"
+    ["code-reviewer"]="Code Reviewer"
+)
+
+# Agent order for launch
+AGENT_ORDER=("developer" "qa-engineer" "code-reviewer")
+
+# Check dependencies
+check_dependencies() {
+    local missing=()
+    
+    if ! command -v opencode &> /dev/null; then
+        missing+=("opencode")
+    fi
+    
+    if ! command -v jq &> /dev/null; then
+        missing+=("jq")
+    fi
+    
+    if ! command -v gh &> /dev/null; then
+        echo -e "${YELLOW}Warning: 'gh' (GitHub CLI) not found. PR features will be limited.${NC}"
+        echo -e "${YELLOW}Install with: sudo apt install gh${NC}"
+        echo
+    fi
+    
+    if [ ${#missing[@]} -gt 0 ]; then
+        echo -e "${RED}Error: Missing required dependencies: ${missing[*]}${NC}"
+        echo
+        echo "Install them with:"
+        for dep in "${missing[@]}"; do
+            case $dep in
+                jq)
+                    echo "  sudo apt install jq"
+                    ;;
+                opencode)
+                    echo "  curl -fsSL https://opencode.ai/install | bash"
+                    ;;
+            esac
+        done
+        exit 1
+    fi
+}
+
+# Initialize standup directory structure
+initialize_standup_dirs() {
+    echo -e "${BLUE}Initializing standup directory structure...${NC}"
+    
+    for role in "${!AGENTS[@]}"; do
+        mkdir -p "$STANDUP_DIR/$role"
+        
+        # Create empty tasks.json if it doesn't exist
+        if [[ ! -f "$STANDUP_DIR/$role/tasks.json" ]]; then
+            cat > "$STANDUP_DIR/$role/tasks.json" <<'EOF'
+{
+  "tasks": []
+}
+EOF
+            echo -e "${GREEN}  ✓ Created tasks.json for $role${NC}"
+        fi
+        
+        # Create today's log if it doesn't exist
+        if [[ ! -f "$STANDUP_DIR/$role/log-$TODAY.md" ]]; then
+            cat > "$STANDUP_DIR/$role/log-$TODAY.md" <<EOF
+# ${AGENTS[$role]} Log - $TODAY
+
+## Morning Standup ($TIME)
+**Completed Recently:**
+- [First standup - no previous work]
+
+**Working On Today:**
+- Waiting for assignments
+
+**Blockers:**
+- None
+
+---
+
+EOF
+            echo -e "${GREEN}  ✓ Created log for $role${NC}"
+        fi
+    done
+    
+    # Create notifications.md if it doesn't exist
+    if [[ ! -f "$STANDUP_DIR/notifications.md" ]]; then
+        cat > "$STANDUP_DIR/notifications.md" <<EOF
+# Team Notifications
+
+> Last standup: $TODAY $TIME
+
+---
+
+## 🔴 URGENT (Requires immediate attention)
+
+[No urgent notifications]
+
+---
+
+## 🟡 IMPORTANT (Review when available)
+
+[No important notifications]
+
+---
+
+## 🟢 FYI (General updates)
+
+**[$TIME] System:**
+Standup system initialized. All agents ready to begin work.
+
+---
+
+EOF
+        echo -e "${GREEN}  ✓ Created notifications.md${NC}"
+    fi
+    
+    echo -e "${GREEN}  ✓ Standup directories ready${NC}"
+    echo
+}
+
+# Check if an OpenCode session exists
+session_exists() {
+    local session_name=$1
+    opencode session list --format json 2>/dev/null | \
+        jq -r '.[].id' 2>/dev/null | \
+        grep -q "^${session_name}$"
+}
+
+# Generate standup prompt for each agent
+generate_standup_prompt() {
+    local role=$1
+    cat <<EOF
+Good morning! It's standup time. 🌅
+
+**Your Role:** ${AGENTS[$role]}
+
+Please start by loading your skill to understand your responsibilities:
+
+\`\`\`
+/skill $role
+\`\`\`
+
+Once loaded, provide your standup update by:
+
+1. **Check Notifications:** Read \`.standup/notifications.md\` for urgent items
+2. **Read Your Progress:**
+   - Daily log: \`.standup/$role/log-$TODAY.md\`
+   - Task list: \`.standup/$role/tasks.json\`
+3. **Give Your Update:** Follow the format in your skill
+
+After your update, wait for today's assignments and priorities.
+
+Throughout the day:
+- Update your progress files as you work
+- Check notifications every 30-60 minutes
+- Post notifications for important events
+- Work autonomously based on your assignments
+
+Let's have a great standup! 🚀
+EOF
+}
+
+# Launch a terminal for an agent
+launch_agent() {
+    local role=$1
+    local title="${AGENTS[$role]}"
+    local session_name="$PROJECT_NAME-$role-$TODAY"
+    local prompt=$(generate_standup_prompt "$role")
+    
+    echo -e "${BLUE}Launching ${BOLD}$title${NC}${BLUE}...${NC}"
+    echo -e "  Session: ${YELLOW}$session_name${NC}"
+    
+    # Check if session exists
+    local continue_flag=""
+    if session_exists "$session_name"; then
+        echo -e "  ${YELLOW}→ Continuing existing session${NC}"
+        continue_flag="--continue"
+    else
+        echo -e "  ${GREEN}→ Creating new session${NC}"
+    fi
+    
+    # Create a wrapper script for this agent session
+    local wrapper_script="$STANDUP_DIR/${role}-wrapper.sh"
+    local prompt_file="$STANDUP_DIR/${role}-prompt.txt"
+    
+    # Save the prompt to a file to avoid escaping issues
+    echo "$prompt" > "$prompt_file"
+    
+    # Write the script directly with actual values
+    cat > "$wrapper_script" <<EOF
+#!/bin/bash
+cd "$PROJECT_ROOT" || exit 1
+
+echo "════════════════════════════════════════════════════════"
+echo "  $title"
+echo "  Session: $session_name"
+echo "════════════════════════════════════════════════════════"
+echo ""
+
+# Run opencode with the prompt from file
+if [ "$continue_flag" = "--continue" ]; then
+    opencode --session "$session_name" --continue --prompt "\$(cat '$prompt_file')"
+else
+    opencode --session "$session_name" --prompt "\$(cat '$prompt_file')"
+fi
+
+# Keep terminal open
+echo ""
+echo "════════════════════════════════════════════════════════"
+echo "Session ended. Press Enter to close this terminal..."
+echo "════════════════════════════════════════════════════════"
+read -r
+EOF
+    
+    chmod +x "$wrapper_script"
+    
+    # Convert WSL path to Windows path for wt.exe
+    local win_wrapper_script=$(wslpath -w "$wrapper_script" 2>/dev/null || echo "$wrapper_script")
+    
+    # Launch using Windows Terminal with proper escaping
+    if command -v wt.exe &> /dev/null; then
+        # Windows Terminal - creates new window for each agent
+        wt.exe -w new --title "Standup: $title" bash -l "$wrapper_script" &
+        echo -e "  ${GREEN}→ Launched in new Windows Terminal window${NC}"
+    else
+        echo -e "${RED}  ✗ Windows Terminal not found${NC}"
+        echo -e "${YELLOW}  Run manually: bash $wrapper_script${NC}"
+    fi
+    
+    sleep 1  # Stagger launches to avoid race conditions
+}
+
+# First run setup wizard
+first_run_setup() {
+    echo -e "${BOLD}╔════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}║     AI Standup System - First Run Setup Wizard        ║${NC}"
+    echo -e "${BOLD}╚════════════════════════════════════════════════════════╝${NC}"
+    echo
+    echo -e "${BLUE}Welcome to the AI Standup System!${NC}"
+    echo
+    echo "This system creates a team of AI agents who work together:"
+    echo "  • ${BOLD}Developer${NC} - Implements features and fixes bugs"
+    echo "  • ${BOLD}QA Engineer${NC} - Tests features and finds bugs"
+    echo "  • ${BOLD}Code Reviewer${NC} - Reviews code quality and suggests improvements"
+    echo
+    echo -e "${YELLOW}Each agent maintains their own progress files and communicates via${NC}"
+    echo -e "${YELLOW}a shared notification board.${NC}"
+    echo
+    echo "Press Enter to continue setup..."
+    read
+    
+    echo
+    echo -e "${BLUE}Setting up directory structure...${NC}"
+    initialize_standup_dirs
+    
+    echo -e "${GREEN}${BOLD}✓ Setup complete!${NC}"
+    echo
+    echo -e "${BOLD}Next Steps:${NC}"
+    echo "  1. Three terminal windows will open (one per agent)"
+    echo "  2. Each agent will give you a status update"
+    echo "  3. Conduct your standup by assigning work to each agent"
+    echo "  4. Agents will work autonomously and notify you of progress"
+    echo
+    echo -e "${BOLD}Useful Commands:${NC}"
+    echo "  ./bin/standup-metrics       - View team metrics dashboard"
+    echo "  ./bin/standup-pr-status     - Check PR status"
+    echo "  ./bin/standup-summary       - Generate daily summary"
+    echo
+    echo "  cat .standup/notifications.md   - Check team notifications"
+    echo
+    echo -e "${BOLD}Tips:${NC}"
+    echo "  • Each agent checks notifications automatically every 30-60 minutes"
+    echo "  • Use priority levels: 🔴 URGENT, 🟡 IMPORTANT, 🟢 FYI"
+    echo "  • Agents will post to notifications.md when they need your attention"
+    echo
+    echo "Press Enter to launch your AI team..."
+    read
+}
+
+# Main execution
+main() {
+    # Check dependencies first
+    check_dependencies
+    
+    # Detect first run
+    if [[ ! -d "$STANDUP_DIR" ]]; then
+        FIRST_RUN=true
+    fi
+    
+    # Run first-time setup if needed
+    if [[ "$FIRST_RUN" = true ]]; then
+        first_run_setup
+    else
+        initialize_standup_dirs
+    fi
+    
+    echo -e "${GREEN}${BOLD}========================================${NC}"
+    echo -e "${GREEN}${BOLD}   AI Team Standup - $TODAY $TIME${NC}"
+    echo -e "${GREEN}${BOLD}========================================${NC}"
+    echo
+    echo -e "${BLUE}Project:${NC} $PROJECT_NAME"
+    echo -e "${BLUE}Location:${NC} $PROJECT_ROOT"
+    echo
+    
+    # Launch each agent terminal
+    echo -e "${BOLD}Launching agents...${NC}"
+    echo
+    
+    for role in "${AGENT_ORDER[@]}"; do
+        launch_agent "$role"
+    done
+    
+    echo
+    echo -e "${GREEN}${BOLD}✓ All agents launched successfully!${NC}"
+    echo
+    echo -e "${BOLD}Your AI team is ready.${NC}"
+    echo "Talk to each terminal window to conduct your standup."
+    echo
+    echo -e "${YELLOW}Pro Tips:${NC}"
+    echo "  • Run './bin/standup-metrics' to see team performance"
+    echo "  • Check '.standup/notifications.md' for agent updates"
+    echo "  • Agents will check notifications every 30-60 minutes"
+    echo
+}
+
+main "$@"

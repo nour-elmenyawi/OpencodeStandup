@@ -1,0 +1,340 @@
+#!/bin/bash
+# Standup Summary Generator
+# Creates a consolidated daily summary from all agent activities
+
+set -e
+
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+STANDUP_DIR="$PROJECT_ROOT/.standup"
+TODAY=$(date +%Y-%m-%d)
+
+# Color codes
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# Get date to summarize (default: today)
+SUMMARY_DATE="${1:-$TODAY}"
+
+# Output file
+OUTPUT_FILE="${2:-.standup/summary-$SUMMARY_DATE.md}"
+
+# Agent roles
+ROLES=("developer" "qa-engineer" "code-reviewer")
+declare -A AGENT_NAMES=(
+    ["developer"]="Developer"
+    ["qa-engineer"]="QA Engineer"
+    ["code-reviewer"]="Code Reviewer"
+)
+
+# Extract tasks by status
+extract_tasks_by_status() {
+    local role=$1
+    local status=$2
+    local tasks_file="$STANDUP_DIR/$role/tasks.json"
+    
+    if [[ ! -f "$tasks_file" ]]; then
+        echo ""
+        return
+    fi
+    
+    jq -r --arg status "$status" \
+        '.tasks[] | select(.status == $status) | "- \(.title) (\(.id))"' \
+        "$tasks_file" 2>/dev/null || echo ""
+}
+
+# Count tasks by status
+count_tasks_by_status() {
+    local role=$1
+    local status=$2
+    local tasks_file="$STANDUP_DIR/$role/tasks.json"
+    
+    if [[ ! -f "$tasks_file" ]]; then
+        echo 0
+        return
+    fi
+    
+    jq --arg status "$status" '[.tasks[] | select(.status == $status)] | length' \
+        "$tasks_file" 2>/dev/null || echo 0
+}
+
+# Extract log content for the day
+extract_log_content() {
+    local role=$1
+    local log_file="$STANDUP_DIR/$role/log-$SUMMARY_DATE.md"
+    
+    if [[ ! -f "$log_file" ]]; then
+        echo "_No log entries for this date_"
+        return
+    fi
+    
+    # Extract content, skip the header
+    tail -n +3 "$log_file" | sed 's/^/  /' || echo "_No activity logged_"
+}
+
+# Get bugs found by QA (high priority)
+get_critical_bugs() {
+    local tasks_file="$STANDUP_DIR/qa-engineer/tasks.json"
+    
+    if [[ ! -f "$tasks_file" ]]; then
+        echo ""
+        return
+    fi
+    
+    jq -r '.tasks[] | select(.type == "bug" and (.severity == "critical" or .severity == "high") and .status != "completed") | 
+        "- [\(.severity | ascii_upcase)] \(.title) (\(.id))"' \
+        "$tasks_file" 2>/dev/null || echo ""
+}
+
+# Get PR activity from git log
+get_pr_activity() {
+    # Look for PR merge commits in the last day
+    git log --since="$SUMMARY_DATE 00:00:00" --until="$SUMMARY_DATE 23:59:59" \
+        --grep="Merge pull request" --oneline 2>/dev/null | \
+        sed 's/^/  - /' || echo "  _No PR activity_"
+}
+
+# Generate the summary
+generate_summary() {
+    cat <<EOF
+# AI Team Daily Summary - $SUMMARY_DATE
+
+> Generated on $(date)
+
+---
+
+## 📊 Overview
+
+$(
+    # Calculate overall stats
+    local total_completed=0
+    local total_in_progress=0
+    local total_blocked=0
+    
+    for role in "${ROLES[@]}"; do
+        completed=$(count_tasks_by_status "$role" "completed")
+        in_progress=$(count_tasks_by_status "$role" "in-progress")
+        blocked=$(count_tasks_by_status "$role" "blocked")
+        
+        total_completed=$((total_completed + completed))
+        total_in_progress=$((total_in_progress + in_progress))
+        total_blocked=$((total_blocked + blocked))
+    done
+    
+    echo "- **Tasks Completed:** $total_completed"
+    echo "- **Tasks In Progress:** $total_in_progress"
+    if [[ $total_blocked -gt 0 ]]; then
+        echo "- **Tasks Blocked:** $total_blocked ⚠️"
+    fi
+)
+
+---
+
+## 👨‍💻 Developer
+
+### Completed Tasks
+$(
+    completed_tasks=$(extract_tasks_by_status "developer" "completed")
+    if [[ -z "$completed_tasks" ]]; then
+        echo "_No tasks completed_"
+    else
+        echo "$completed_tasks"
+    fi
+)
+
+### In Progress
+$(
+    in_progress_tasks=$(extract_tasks_by_status "developer" "in-progress")
+    if [[ -z "$in_progress_tasks" ]]; then
+        echo "_No tasks in progress_"
+    else
+        echo "$in_progress_tasks"
+    fi
+)
+
+### Activity Log
+$(extract_log_content "developer")
+
+---
+
+## 🧪 QA Engineer
+
+### Completed Tasks
+$(
+    completed_tasks=$(extract_tasks_by_status "qa-engineer" "completed")
+    if [[ -z "$completed_tasks" ]]; then
+        echo "_No tasks completed_"
+    else
+        echo "$completed_tasks"
+    fi
+)
+
+### Active Bugs Found
+$(
+    bugs=$(get_critical_bugs)
+    if [[ -z "$bugs" ]]; then
+        echo "_No critical/high bugs currently open_"
+    else
+        echo "$bugs"
+    fi
+)
+
+### Activity Log
+$(extract_log_content "qa-engineer")
+
+---
+
+## 👀 Code Reviewer
+
+### Reviews Completed
+$(
+    completed_tasks=$(extract_tasks_by_status "code-reviewer" "completed")
+    review_completed_tasks=$(extract_tasks_by_status "code-reviewer" "review-completed")
+    approved_tasks=$(extract_tasks_by_status "code-reviewer" "approved")
+    
+    all_reviews=$(echo -e "$completed_tasks\n$review_completed_tasks\n$approved_tasks" | grep -v '^$')
+    
+    if [[ -z "$all_reviews" ]]; then
+        echo "_No reviews completed_"
+    else
+        echo "$all_reviews"
+    fi
+)
+
+### Pending Reviews
+$(
+    pending_tasks=$(extract_tasks_by_status "code-reviewer" "in-progress")
+    if [[ -z "$pending_tasks" ]]; then
+        echo "_No pending reviews_"
+    else
+        echo "$pending_tasks"
+    fi
+)
+
+### Activity Log
+$(extract_log_content "code-reviewer")
+
+---
+
+## 🔀 Git Activity
+
+### Pull Requests
+$(get_pr_activity)
+
+### Commits Today
+$(
+    commits=$(git log --since="$SUMMARY_DATE 00:00:00" --until="$SUMMARY_DATE 23:59:59" \
+        --pretty=format:"  - %s (%an)" 2>/dev/null || echo "  _No commits_")
+    
+    if [[ -z "$commits" ]]; then
+        echo "  _No commits_"
+    else
+        echo "$commits"
+    fi
+)
+
+---
+
+## 📢 Notifications Summary
+
+### Urgent Items
+$(
+    if [[ -f "$STANDUP_DIR/notifications.md" ]]; then
+        awk '/^## 🔴 URGENT/,/^## / {if (/^\*\*\[/) print "  " $0}' "$STANDUP_DIR/notifications.md" 2>/dev/null || echo "  _None_"
+    else
+        echo "  _None_"
+    fi
+)
+
+### Important Items
+$(
+    if [[ -f "$STANDUP_DIR/notifications.md" ]]; then
+        awk '/^## 🟡 IMPORTANT/,/^## / {if (/^\*\*\[/) print "  " $0}' "$STANDUP_DIR/notifications.md" 2>/dev/null || echo "  _None_"
+    else
+        echo "  _None_"
+    fi
+)
+
+---
+
+## 📈 Metrics
+
+$(
+    for role in "${ROLES[@]}"; do
+        read -r total completed in_progress blocked todo <<< $(
+            tasks_file="$STANDUP_DIR/$role/tasks.json"
+            if [[ -f "$tasks_file" ]]; then
+                total=$(jq '.tasks | length' "$tasks_file")
+                completed=$(jq '[.tasks[] | select(.status == "completed")] | length' "$tasks_file")
+                in_progress=$(jq '[.tasks[] | select(.status == "in-progress")] | length' "$tasks_file")
+                blocked=$(jq '[.tasks[] | select(.status == "blocked")] | length' "$tasks_file")
+                todo=$(jq '[.tasks[] | select(.status == "todo")] | length' "$tasks_file")
+                echo "$total $completed $in_progress $blocked $todo"
+            else
+                echo "0 0 0 0 0"
+            fi
+        )
+        
+        echo "**${AGENT_NAMES[$role]}:** $completed completed, $in_progress in progress, $todo todo"
+        if [[ $blocked -gt 0 ]]; then
+            echo "  ⚠️ $blocked blocked"
+        fi
+    done
+)
+
+---
+
+## 🎯 Action Items for Next Standup
+
+$(
+    # Extract all blocked tasks across agents
+    blocked_items=""
+    for role in "${ROLES[@]}"; do
+        tasks_file="$STANDUP_DIR/$role/tasks.json"
+        if [[ -f "$tasks_file" ]]; then
+            blocked=$(jq -r '.tasks[] | select(.status == "blocked") | 
+                "- **\(if .priority then (.priority | ascii_upcase) else "MEDIUM" end):** \(.title) (\(.id)) - ${AGENT_NAMES['$role']}"' \
+                "$tasks_file" 2>/dev/null)
+            if [[ -n "$blocked" ]]; then
+                blocked_items="${blocked_items}${blocked}\n"
+            fi
+        fi
+    done
+    
+    if [[ -z "$blocked_items" ]]; then
+        echo "_No blocked tasks - great progress!_"
+    else
+        echo -e "$blocked_items"
+    fi
+)
+
+---
+
+_End of daily summary_
+EOF
+}
+
+# Main execution
+echo -e "${BLUE}Generating daily summary for $SUMMARY_DATE...${NC}"
+
+# Check if standup directory exists
+if [[ ! -d "$STANDUP_DIR" ]]; then
+    echo -e "${RED}Error: Standup directory not found${NC}"
+    echo "Run './bin/standup' first to initialize the system"
+    exit 1
+fi
+
+# Generate and save summary
+generate_summary > "$OUTPUT_FILE"
+
+echo -e "${GREEN}✓ Summary generated: $OUTPUT_FILE${NC}"
+echo
+
+# Display summary
+cat "$OUTPUT_FILE"
+
+echo
+echo -e "${BLUE}Summary saved to: $OUTPUT_FILE${NC}"

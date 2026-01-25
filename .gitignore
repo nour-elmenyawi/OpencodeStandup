@@ -1,0 +1,20 @@
+# General
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Editor
+.vscode/
+.idea/
+*.sublime-*
+
+# System
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+
+# Installation artifacts
+*.log
