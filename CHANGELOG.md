@@ -30,7 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Three specialized AI agents**
+- **Four specialized AI agents**
+  - Architect agent for system design and architecture guidance
   - Developer agent for implementing features and fixing bugs
   - QA Engineer agent for testing and quality assurance
   - Code Reviewer agent for code review and quality standards
@@ -41,7 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Session naming: `<project>-<role>-<date>`
 
 - **Automatic terminal management**
-  - Launches 3 separate Windows Terminal windows
+  - Launches 4 separate terminal windows (one per agent)
+  - Cross-platform support: Windows Terminal (WSL), iTerm2/Terminal.app (macOS), GNOME Terminal/Konsole/xterm (Linux)
   - Persistent sessions that can be resumed
   - Wrapper scripts for reliable launching
 
@@ -83,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Files Included
 
-- 3 agent skill files (developer, qa-engineer, code-reviewer)
+- 4 agent skill files (architect, developer, qa-engineer, code-reviewer)
 - 4 utility scripts (standup, metrics, summary, pr-status)
 - Installation script with dependency checking
 - MIT license

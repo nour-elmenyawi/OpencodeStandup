@@ -181,6 +181,101 @@ session_exists() {
         grep -q "^${session_name}$"
 }
 
+# Detect operating system
+detect_os() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macos"
+    elif [[ -f "/proc/version" ]] && grep -qi "microsoft" /proc/version 2>/dev/null; then
+        echo "wsl"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        echo "linux"
+    else
+        echo "unknown"
+    fi
+}
+
+# Launch terminal based on OS
+launch_terminal_window() {
+    local title=$1
+    local wrapper_script=$2
+    local os=$(detect_os)
+    
+    case "$os" in
+        wsl)
+            # WSL - Use Windows Terminal
+            local win_wrapper_script=$(wslpath -w "$wrapper_script" 2>/dev/null || echo "$wrapper_script")
+            if command -v wt.exe &> /dev/null; then
+                wt.exe -w new --title "Standup: $title" bash -l "$wrapper_script" &
+                echo -e "  ${GREEN}→ Launched in new Windows Terminal window${NC}"
+                return 0
+            else
+                echo -e "${RED}  ✗ Windows Terminal (wt.exe) not found${NC}"
+                return 1
+            fi
+            ;;
+            
+        macos)
+            # macOS - Try iTerm2 first, then Terminal.app
+            if [[ -d "/Applications/iTerm.app" ]]; then
+                osascript <<EOF 2>/dev/null
+tell application "iTerm"
+    activate
+    create window with default profile
+    tell current session of current window
+        write text "cd '$PROJECT_ROOT' && bash '$wrapper_script'"
+    end tell
+end tell
+EOF
+                if [[ $? -eq 0 ]]; then
+                    echo -e "  ${GREEN}→ Launched in new iTerm2 window${NC}"
+                    return 0
+                fi
+            fi
+            
+            # Fallback to Terminal.app
+            osascript <<EOF 2>/dev/null
+tell application "Terminal"
+    activate
+    do script "cd '$PROJECT_ROOT' && bash '$wrapper_script'"
+end tell
+EOF
+            if [[ $? -eq 0 ]]; then
+                echo -e "  ${GREEN}→ Launched in new Terminal window${NC}"
+                return 0
+            else
+                echo -e "${RED}  ✗ Failed to launch Terminal${NC}"
+                return 1
+            fi
+            ;;
+            
+        linux)
+            # Native Linux - Try various terminal emulators
+            if command -v gnome-terminal &> /dev/null; then
+                gnome-terminal --title="Standup: $title" -- bash -c "cd '$PROJECT_ROOT' && bash '$wrapper_script'" &
+                echo -e "  ${GREEN}→ Launched in new GNOME Terminal window${NC}"
+                return 0
+            elif command -v konsole &> /dev/null; then
+                konsole --new-tab -p tabtitle="Standup: $title" -e bash -c "cd '$PROJECT_ROOT' && bash '$wrapper_script'" &
+                echo -e "  ${GREEN}→ Launched in new Konsole window${NC}"
+                return 0
+            elif command -v xterm &> /dev/null; then
+                xterm -title "Standup: $title" -e bash -c "cd '$PROJECT_ROOT' && bash '$wrapper_script'" &
+                echo -e "  ${GREEN}→ Launched in new xterm window${NC}"
+                return 0
+            else
+                echo -e "${RED}  ✗ No supported terminal emulator found${NC}"
+                echo -e "${YELLOW}  Install: gnome-terminal, konsole, or xterm${NC}"
+                return 1
+            fi
+            ;;
+            
+        *)
+            echo -e "${RED}  ✗ Unsupported operating system${NC}"
+            return 1
+            ;;
+    esac
+}
+
 # Generate standup prompt for each agent
 generate_standup_prompt() {
     local role=$1
@@ -269,16 +364,8 @@ EOF
     
     chmod +x "$wrapper_script"
     
-    # Convert WSL path to Windows path for wt.exe
-    local win_wrapper_script=$(wslpath -w "$wrapper_script" 2>/dev/null || echo "$wrapper_script")
-    
-    # Launch using Windows Terminal with proper escaping
-    if command -v wt.exe &> /dev/null; then
-        # Windows Terminal - creates new window for each agent
-        wt.exe -w new --title "Standup: $title" bash -l "$wrapper_script" &
-        echo -e "  ${GREEN}→ Launched in new Windows Terminal window${NC}"
-    else
-        echo -e "${RED}  ✗ Windows Terminal not found${NC}"
+    # Launch terminal window using platform-specific launcher
+    if ! launch_terminal_window "$title" "$wrapper_script"; then
         echo -e "${YELLOW}  Run manually: bash $wrapper_script${NC}"
     fi
     
@@ -294,6 +381,7 @@ first_run_setup() {
     echo -e "${BLUE}Welcome to the AI Standup System!${NC}"
     echo
     echo "This system creates a team of AI agents who work together:"
+    echo "  • ${BOLD}Architect${NC} - Designs system architecture and guides technical decisions"
     echo "  • ${BOLD}Developer${NC} - Implements features and fixes bugs"
     echo "  • ${BOLD}QA Engineer${NC} - Tests features and finds bugs"
     echo "  • ${BOLD}Code Reviewer${NC} - Reviews code quality and suggests improvements"
@@ -311,7 +399,7 @@ first_run_setup() {
     echo -e "${GREEN}${BOLD}✓ Setup complete!${NC}"
     echo
     echo -e "${BOLD}Next Steps:${NC}"
-    echo "  1. Three terminal windows will open (one per agent)"
+    echo "  1. Four terminal windows will open (one per agent)"
     echo "  2. Each agent will give you a status update"
     echo "  3. Conduct your standup by assigning work to each agent"
     echo "  4. Agents will work autonomously and notify you of progress"

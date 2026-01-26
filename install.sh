@@ -54,13 +54,55 @@ fi
 
 echo ""
 
-# Detect Windows Terminal
-if command -v wt.exe &> /dev/null; then
-    echo -e "${GREEN}  ✓ Windows Terminal detected${NC}"
-else
-    echo -e "${YELLOW}⚠ Windows Terminal not detected${NC}"
-    echo -e "${YELLOW}  Automatic terminal launching may not work${NC}"
-fi
+# Detect OS and terminal emulator
+detect_os() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macos"
+    elif [[ -f "/proc/version" ]] && grep -qi "microsoft" /proc/version 2>/dev/null; then
+        echo "wsl"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        echo "linux"
+    else
+        echo "unknown"
+    fi
+}
+
+OS=$(detect_os)
+
+case "$OS" in
+    wsl)
+        if command -v wt.exe &> /dev/null; then
+            echo -e "${GREEN}  ✓ Windows Terminal detected (WSL)${NC}"
+        else
+            echo -e "${YELLOW}⚠ Windows Terminal not detected${NC}"
+            echo -e "${YELLOW}  Automatic terminal launching may not work${NC}"
+        fi
+        ;;
+    macos)
+        if [[ -d "/Applications/iTerm.app" ]]; then
+            echo -e "${GREEN}  ✓ iTerm2 detected${NC}"
+        elif [[ -d "/Applications/Utilities/Terminal.app" ]]; then
+            echo -e "${GREEN}  ✓ Terminal.app detected${NC}"
+        else
+            echo -e "${YELLOW}⚠ No terminal emulator detected${NC}"
+        fi
+        ;;
+    linux)
+        if command -v gnome-terminal &> /dev/null; then
+            echo -e "${GREEN}  ✓ GNOME Terminal detected${NC}"
+        elif command -v konsole &> /dev/null; then
+            echo -e "${GREEN}  ✓ Konsole detected${NC}"
+        elif command -v xterm &> /dev/null; then
+            echo -e "${GREEN}  ✓ xterm detected${NC}"
+        else
+            echo -e "${YELLOW}⚠ No supported terminal emulator found${NC}"
+            echo -e "${YELLOW}  Install: gnome-terminal, konsole, or xterm${NC}"
+        fi
+        ;;
+    *)
+        echo -e "${YELLOW}⚠ Unknown operating system${NC}"
+        ;;
+esac
 
 echo ""
 

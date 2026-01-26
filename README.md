@@ -25,7 +25,8 @@ Automate your daily standups with four specialized AI agents that work together 
   - Independent sessions per project
 
 - 💻 **Automatic Terminal Management**
-  - Launches 4 separate Windows Terminal windows
+  - Launches 4 separate terminal windows automatically
+  - Supports Windows Terminal (WSL), iTerm2/Terminal.app (macOS), and GNOME Terminal/Konsole/xterm (Linux)
   - Persistent sessions (resume anytime)
   - Session naming: `<project>-<role>-<date>`
 
@@ -38,7 +39,10 @@ Automate your daily standups with four specialized AI agents that work together 
 
 - [OpenCode](https://opencode.ai) - AI coding assistant
 - Git
-- Windows Terminal (for automatic launching)
+- Terminal emulator (platform-specific):
+  - **Windows (WSL):** Windows Terminal
+  - **macOS:** iTerm2 or Terminal.app (built-in)
+  - **Linux:** GNOME Terminal, Konsole, or xterm
 - `jq` (optional, for metrics)
 - `gh` GitHub CLI (optional, for PR features)
 
@@ -71,7 +75,12 @@ cd ~/my-project
 standup
 ```
 
-Three Windows Terminal windows will open, each with an agent ready to provide their standup update.
+Four terminal windows will open, each with an agent ready to provide their standup update.
+
+**Platform Notes:**
+- **Windows/WSL:** Opens new Windows Terminal windows
+- **macOS:** Opens new iTerm2 windows (or Terminal.app if iTerm2 not installed)
+- **Linux:** Opens new GNOME Terminal, Konsole, or xterm windows (whichever is available)
 
 ## How It Works
 
@@ -83,6 +92,9 @@ Each project gets its own `.standup/` directory:
 ~/my-project/
 ├── .standup/
 │   ├── notifications.md          # Shared notifications
+│   ├── architect/
+│   │   ├── log-2024-01-25.md    # Daily log
+│   │   └── tasks.json            # Task tracking
 │   ├── developer/
 │   │   ├── log-2024-01-25.md    # Daily log
 │   │   └── tasks.json            # Task tracking

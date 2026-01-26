@@ -78,7 +78,12 @@ echo ".standup/" >> .gitignore
 standup
 ```
 
-Four Windows Terminal windows will open!
+Four terminal windows will open, one for each agent!
+
+**Platform-specific behavior:**
+- **Windows/WSL:** Opens in Windows Terminal
+- **macOS:** Opens in iTerm2 or Terminal.app
+- **Linux:** Opens in GNOME Terminal, Konsole, or xterm
 
 ## What Happens Next?
 
@@ -150,10 +155,14 @@ standup  # Resumes existing sessions for today
 # View notifications
 cat .standup/notifications.md
 
+# View architect's log
+cat .standup/architect/log-2024-01-25.md
+
 # View developer's log
 cat .standup/developer/log-2024-01-25.md
 
-# View tasks
+# View tasks for any agent
+cat .standup/architect/tasks.json | jq
 cat .standup/developer/tasks.json | jq
 ```
 
@@ -180,7 +189,24 @@ standup --project-name my-app
 
 ### Terminals don't open
 
+**Windows/WSL:**
 1. Check Windows Terminal is installed
+2. Try manual launch:
+   ```bash
+   cd .standup
+   bash developer-wrapper.sh
+   ```
+
+**macOS:**
+1. Check iTerm2 or Terminal.app is available
+2. Try manual launch:
+   ```bash
+   cd .standup
+   bash developer-wrapper.sh
+   ```
+
+**Linux:**
+1. Install a supported terminal: `gnome-terminal`, `konsole`, or `xterm`
 2. Try manual launch:
    ```bash
    cd .standup
