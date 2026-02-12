@@ -479,27 +479,29 @@ launch_tmux_standup() {
     # Balance the 2x2 grid first
     tmux select-layout -t "$tmux_session:$window_id" tiled
     
-    # Pane 4: User Terminal (bottom widescreen) - split horizontally from pane 2
-    # Use -l (lines) instead of -p (percentage) for better compatibility
+    # Pane 4: User Terminal (bottom widescreen) - split from bottom-left (pane 2)
+    # When we split pane 2, the NEW pane takes pane 2's number, and old pane 2 becomes pane 4
     if ! tmux split-window -v -t "$tmux_session:$window_id.2" -l 12; then
         echo -e "${RED}ERROR: Failed to create pane 4 (user terminal)${NC}"
         exit 1
     fi
-    tmux select-pane -t "$tmux_session:$window_id.4" -T "User Terminal"
+    # The new split pane becomes pane 2, and the old pane 2 (QA) becomes pane 4
+    # So now: pane 0=Arch, pane 1=Dev, pane 2=Terminal, pane 3=Reviewer, pane 4=QA
+    tmux select-pane -t "$tmux_session:$window_id.2" -T "User Terminal"
     
-    # Send commands to each AI role pane
-    tmux send-keys -t "$tmux_session:$window_id.0" "bash '${wrapper_scripts[0]}'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.1" "bash '${wrapper_scripts[1]}'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.2" "bash '${wrapper_scripts[2]}'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.3" "bash '${wrapper_scripts[3]}'" Enter
+    # Send commands to each AI role pane (accounting for renumbering)
+    tmux send-keys -t "$tmux_session:$window_id.0" "bash '${wrapper_scripts[0]}'" Enter  # Architect
+    tmux send-keys -t "$tmux_session:$window_id.1" "bash '${wrapper_scripts[1]}'" Enter  # Developer
+    tmux send-keys -t "$tmux_session:$window_id.4" "bash '${wrapper_scripts[2]}'" Enter  # QA (moved to pane 4!)
+    tmux send-keys -t "$tmux_session:$window_id.3" "bash '${wrapper_scripts[3]}'" Enter  # Code Reviewer
     
-    # Setup the user terminal pane (pane 4) with project context
-    tmux send-keys -t "$tmux_session:$window_id.4" "cd '$PROJECT_ROOT'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.4" "clear" Enter
-    tmux send-keys -t "$tmux_session:$window_id.4" "echo '═══════════════════════════════════════════════════════════════'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.4" "echo '  User Terminal - Run manual commands in: $PROJECT_NAME'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.4" "echo '═══════════════════════════════════════════════════════════════'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.4" "echo ''" Enter
+    # Setup the user terminal pane (now pane 2) with project context
+    tmux send-keys -t "$tmux_session:$window_id.2" "cd '$PROJECT_ROOT'" Enter
+    tmux send-keys -t "$tmux_session:$window_id.2" "clear" Enter
+    tmux send-keys -t "$tmux_session:$window_id.2" "echo '═══════════════════════════════════════════════════════════════'" Enter
+    tmux send-keys -t "$tmux_session:$window_id.2" "echo '  User Terminal - Run manual commands in: $PROJECT_NAME'" Enter
+    tmux send-keys -t "$tmux_session:$window_id.2" "echo '═══════════════════════════════════════════════════════════════'" Enter
+    tmux send-keys -t "$tmux_session:$window_id.2" "echo ''" Enter
     
     # Select the first pane (Architect)
     tmux select-pane -t "$tmux_session:$window_id.0"
