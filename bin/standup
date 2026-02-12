@@ -476,11 +476,12 @@ launch_tmux_standup() {
     fi
     tmux select-pane -t "$tmux_session:$window_id.3" -T "${role_titles[3]}"
     
-    # Balance the panes to make them equal size (2x2 grid)
+    # Balance the 2x2 grid first
     tmux select-layout -t "$tmux_session:$window_id" tiled
     
-    # Pane 4: User Terminal (bottom widescreen) - split horizontally from entire window
-    if ! tmux split-window -v -t "$tmux_session:$window_id" -p 25; then
+    # Pane 4: User Terminal (bottom widescreen) - split horizontally from pane 2
+    # Use -l (lines) instead of -p (percentage) for better compatibility
+    if ! tmux split-window -v -t "$tmux_session:$window_id.2" -l 12; then
         echo -e "${RED}ERROR: Failed to create pane 4 (user terminal)${NC}"
         exit 1
     fi
