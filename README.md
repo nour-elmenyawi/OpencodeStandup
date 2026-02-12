@@ -150,9 +150,9 @@ Run standup in different projects - each gets isolated roles:
 
 ```bash
 # Project 1
-cd ~/trading-cards-app
+cd ~/my-web-app
 standup
-# Sessions: trading-cards-app-developer-2024-01-25, etc.
+# Sessions: my-web-app-developer-2024-01-25, etc.
 
 # Project 2
 cd ~/another-project
