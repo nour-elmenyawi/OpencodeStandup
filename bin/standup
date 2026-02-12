@@ -295,11 +295,11 @@ cd "$PROJECT_ROOT" || exit 1
 # Set pane title
 printf '\033]2;%s\033\\' "${ROLES[$role]}"
 
-# Run opencode with the prompt from file
+# Run opencode with the agent flag and prompt from file
 if [ "$continue_flag" = "--continue" ]; then
-    opencode --session "$session_name" --continue --prompt "\$(cat '$prompt_file')"
+    opencode --agent "$role" --session "$session_name" --continue --prompt "\$(cat '$prompt_file')"
 else
-    opencode --session "$session_name" --prompt "\$(cat '$prompt_file')"
+    opencode --agent "$role" --session "$session_name" --prompt "\$(cat '$prompt_file')"
 fi
 
 # Keep pane open on exit
@@ -354,12 +354,6 @@ Good morning! It's standup time. 🌅
 **Your Role:** ${ROLES[$role]}
 **Date:** $TODAY
 **Time:** $TIME
-
-Please start by loading your skill to understand your responsibilities:
-
-\`\`\`
-/skill $role
-\`\`\`
 $previous_summary$previous_log
 ## Your Tasks for Today
 
@@ -367,7 +361,7 @@ $previous_summary$previous_log
 2. **Read Your Progress:**
    - Daily log: \`.standup/$role/log-$TODAY.md\`
    - Task list: \`.standup/$role/tasks.json\`
-3. **Give Your Update:** Follow the format in your skill
+3. **Give Your Update:** Provide a brief standup update following your role's format
 
 After your update, wait for today's assignments and priorities.
 
