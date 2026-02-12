@@ -391,7 +391,7 @@ Let's have a great standup! 🚀
 EOF
 }
 
-# Launch tmux session with all roles in a 2x2 grid
+# Launch tmux session with all roles using tmuxp
 launch_tmux_standup() {
     local tmux_session="standup-$PROJECT_NAME-$TODAY"
     
@@ -432,77 +432,134 @@ launch_tmux_standup() {
         role_titles+=("$title")
     done
     
+    # Detect terminal height to decide on layout
+    # We need at least 20 lines for a 5-pane layout (4 AI panes + small terminal)
+    local terminal_lines
+    terminal_lines=$(tput lines 2>/dev/null || echo "24")
+    
+    local USE_5_PANE=false
+    if [ "$terminal_lines" -ge 20 ]; then
+        USE_5_PANE=true
+        echo -e "${GREEN}Terminal height: $terminal_lines lines - using 5-pane layout${NC}"
+    else
+        echo -e "${YELLOW}Terminal height: $terminal_lines lines (< 20) - using 4-pane layout${NC}"
+    fi
+    
+    # Generate tmuxp config
+    local tmuxp_config="$STANDUP_DIR/.tmuxp-session.yaml"
     echo ""
-    echo -e "${GREEN}Creating tmux session: ${BOLD}$tmux_session${NC}"
-    echo ""
+    echo -e "${GREEN}Creating tmuxp configuration...${NC}"
     
-    # Create new tmux session (detached) - only use -f here to load config
-    if ! tmux -f "$tmux_conf" new-session -d -s "$tmux_session" -n "standup"; then
-        echo -e "${RED}ERROR: Failed to create tmux session${NC}"
-        exit 1
-    fi
-    
-    # Get the window ID (could be 0 or 1 depending on base-index setting)
-    local window_id
-    window_id=$(tmux list-windows -t "$tmux_session" -F "#{window_index}" | head -1)
-    
-    # All subsequent commands work on the existing session (no -f needed)
-    # Use $window_id instead of hardcoded 0
-    
-    # Pane 0: Architect (top-left) - already exists from new-session
-    if ! tmux select-pane -t "$tmux_session:$window_id.0" -T "${role_titles[0]}"; then
-        echo -e "${RED}ERROR: Failed to select pane 0${NC}"
-        exit 1
-    fi
-    
-    # Pane 1: Developer (top-right) - split horizontally from pane 0
-    if ! tmux split-window -h -t "$tmux_session:$window_id.0"; then
-        echo -e "${RED}ERROR: Failed to create pane 1${NC}"
-        exit 1
-    fi
-    tmux select-pane -t "$tmux_session:$window_id.1" -T "${role_titles[1]}"
-    
-    # Pane 2: QA Engineer (bottom-left) - split vertically from pane 0
-    if ! tmux split-window -v -t "$tmux_session:$window_id.0"; then
-        echo -e "${RED}ERROR: Failed to create pane 2${NC}"
-        exit 1
-    fi
-    tmux select-pane -t "$tmux_session:$window_id.2" -T "${role_titles[2]}"
-    
-    # Pane 3: Code Reviewer (bottom-right) - split vertically from pane 1
-    if ! tmux split-window -v -t "$tmux_session:$window_id.1"; then
-        echo -e "${RED}ERROR: Failed to create pane 3${NC}"
-        exit 1
-    fi
-    tmux select-pane -t "$tmux_session:$window_id.3" -T "${role_titles[3]}"
-    
-    # Balance the panes to make them equal size
-    tmux select-layout -t "$tmux_session:$window_id" tiled
-    
-    # Send commands to each pane
-    tmux send-keys -t "$tmux_session:$window_id.0" "bash '${wrapper_scripts[0]}'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.1" "bash '${wrapper_scripts[1]}'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.2" "bash '${wrapper_scripts[2]}'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.3" "bash '${wrapper_scripts[3]}'" Enter
-    
-    # Pane 4: User Terminal - add a 5th pane at the bottom for manual commands
-    # Use percentage (-p) instead of lines (-l) to avoid "size missing" error
-    if tmux split-window -v -t "$tmux_session:$window_id.2" -p 25 2>/dev/null; then
-        # Split succeeded - new pane becomes active, set it up
-        tmux select-pane -T "User Terminal"
-        tmux send-keys "cd '$PROJECT_ROOT'" Enter
-        tmux send-keys "clear" Enter
-        tmux send-keys "echo '═══════════════════════════════════════════════════════════════'" Enter
-        tmux send-keys "echo '  User Terminal - Run manual commands in: $PROJECT_NAME'" Enter
-        tmux send-keys "echo '═══════════════════════════════════════════════════════════════'" Enter
+    if [ "$USE_5_PANE" = true ]; then
+        # 5-pane layout with terminal at bottom
+        # tmuxp doesn't natively support a 2x2 grid with a full-width bottom pane
+        # So we'll use tmuxp to create 4 panes in tiled layout, then manually add the 5th
+        cat > "$tmuxp_config" <<EOF
+session_name: $tmux_session
+shell_command_before:
+  - cd $PROJECT_ROOT
+start_directory: $PROJECT_ROOT
+windows:
+  - window_name: standup
+    layout: tiled
+    options:
+      automatic-rename: off
+    panes:
+      # Top-left: Architect
+      - shell_command:
+          - bash ${wrapper_scripts[0]}
+        focus: true
+      # Top-right: Developer  
+      - shell_command:
+          - bash ${wrapper_scripts[1]}
+      # Bottom-left: QA
+      - shell_command:
+          - bash ${wrapper_scripts[2]}
+      # Bottom-right: Code Reviewer
+      - shell_command:
+          - bash ${wrapper_scripts[3]}
+EOF
         HAS_TERMINAL=true
     else
+        # 4-pane layout: standard 2x2 grid
+        cat > "$tmuxp_config" <<EOF
+session_name: $tmux_session
+shell_command_before:
+  - cd $PROJECT_ROOT
+start_directory: $PROJECT_ROOT
+windows:
+  - window_name: standup
+    layout: tiled
+    options:
+      automatic-rename: off
+    panes:
+      # Top-left: Architect
+      - shell_command:
+          - bash ${wrapper_scripts[0]}
+        focus: true
+      # Top-right: Developer  
+      - shell_command:
+          - bash ${wrapper_scripts[1]}
+      # Bottom-left: QA
+      - shell_command:
+          - bash ${wrapper_scripts[2]}
+      # Bottom-right: Code Reviewer
+      - shell_command:
+          - bash ${wrapper_scripts[3]}
+EOF
         HAS_TERMINAL=false
     fi
     
-    # Select the first pane (Architect)
-    tmux select-pane -t "$tmux_session:$window_id.0"
+    echo ""
+    echo -e "${GREEN}Loading tmux session with tmuxp: ${BOLD}$tmux_session${NC}"
+    echo ""
     
+    # Load the session with tmuxp, but don't attach yet
+    if ! tmuxp load -d "$tmuxp_config"; then
+        echo -e "${RED}ERROR: Failed to create tmux session with tmuxp${NC}"
+        exit 1
+    fi
+    
+    # Apply our custom tmux config to the session
+    # tmuxp doesn't support loading tmux config files, so we need to apply settings manually
+    tmux set-option -t "$tmux_session" prefix C-b
+    tmux bind-key -n C-h select-pane -L -t "$tmux_session"
+    tmux bind-key -n C-j select-pane -D -t "$tmux_session"
+    tmux bind-key -n C-k select-pane -U -t "$tmux_session"
+    tmux bind-key -n C-l select-pane -R -t "$tmux_session"
+    tmux set-option -t "$tmux_session" mouse on
+    tmux set-option -t "$tmux_session" pane-border-status top
+    tmux set-option -t "$tmux_session" pane-border-format " #{pane_title} "
+    
+    # If 5-pane layout, add the terminal pane at the bottom
+    if [ "$USE_5_PANE" = true ]; then
+        echo -e "${GREEN}Adding user terminal pane...${NC}"
+        
+        # Get the first pane ID (not index, since index might not be 0)
+        local first_pane_id
+        first_pane_id=$(tmux list-panes -t "$tmux_session" -F "#{pane_id}" | head -1)
+        
+        # Split the entire window horizontally to create a bottom pane
+        # -f flag makes it a full-width split across all panes
+        local terminal_pane_id
+        terminal_pane_id=$(tmux split-window -f -v -t "$first_pane_id" -l 6 -P -F "#{pane_id}")
+        
+        # Set the terminal pane title
+        tmux select-pane -t "$terminal_pane_id" -T "User Terminal"
+        
+        # Setup terminal pane with welcome message
+        tmux send-keys -t "$terminal_pane_id" "cd '$PROJECT_ROOT'" Enter
+        tmux send-keys -t "$terminal_pane_id" "clear" Enter
+        tmux send-keys -t "$terminal_pane_id" "echo '═══════════════════════════════════════════════════════════════'" Enter
+        tmux send-keys -t "$terminal_pane_id" "echo '  User Terminal - $PROJECT_NAME'" Enter
+        tmux send-keys -t "$terminal_pane_id" "echo '═══════════════════════════════════════════════════════════════'" Enter
+        tmux send-keys -t "$terminal_pane_id" "echo ''" Enter
+        
+        # Select back to first pane (Architect)
+        tmux select-pane -t "$first_pane_id"
+    fi
+    
+    echo ""
     echo -e "${GREEN}${BOLD}✓ All roles launched in tmux!${NC}"
     echo ""
     if [ "$HAS_TERMINAL" = true ]; then
@@ -521,6 +578,8 @@ launch_tmux_standup() {
         echo "  ├─────────────────┼─────────────────┤"
         echo "  │  QA Engineer    │ Code Reviewer   │"
         echo "  └─────────────────┴─────────────────┘"
+        echo ""
+        echo -e "${YELLOW}TIP: Make your terminal taller (30+ lines) for a 5th user terminal pane${NC}"
     fi
     echo ""
     echo -e "${BOLD}Navigation:${NC}"
