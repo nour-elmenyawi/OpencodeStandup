@@ -18,3 +18,7 @@ temp/
 
 # Installation artifacts
 *.log
+
+# Standup data (add this to your project's .gitignore)
+# Note: Each project using standup should add this to their own .gitignore
+# .standup/

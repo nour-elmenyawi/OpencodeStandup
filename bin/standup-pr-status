@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Standup PR Status - Quick overview of pull request status
 
 set -e
@@ -16,7 +16,13 @@ NC='\033[0m'
 # Check if gh is installed
 if ! command -v gh &> /dev/null; then
     echo -e "${RED}Error: GitHub CLI (gh) is not installed${NC}"
-    echo "Install with: sudo apt install gh"
+    
+    # Detect OS for install instructions
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "Install with: brew install gh"
+    else
+        echo "Install with: sudo apt install gh"
+    fi
     echo "Or visit: https://cli.github.com/"
     exit 1
 fi

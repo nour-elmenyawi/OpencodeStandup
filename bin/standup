@@ -1,8 +1,19 @@
-#!/bin/bash
-# AI Standup System - Launches specialized OpenCode agents for team standup
+#!/usr/bin/env bash
+# AI Standup System - Launches specialized OpenCode roles for team standup
 # Usage: ./bin/standup [--project-name <name>]
 
 set -e
+
+# Require Bash 4.0 or higher for associative arrays
+if ((BASH_VERSINFO[0] < 4)); then
+    echo "Error: This script requires Bash 4.0 or higher (you have $BASH_VERSION)"
+    echo ""
+    echo "On macOS, install with:"
+    echo "  brew install bash"
+    echo ""
+    echo "Then make sure Homebrew bash is in your PATH before /bin/bash"
+    exit 1
+fi
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -51,16 +62,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Agent definitions (role → display name)
-declare -A AGENTS=(
+# Role definitions (role → display name)
+declare -A ROLES=(
     ["architect"]="Architect (System Designer)"
     ["developer"]="Developer (Bug Fixer)"
     ["qa-engineer"]="QA Engineer"
     ["code-reviewer"]="Code Reviewer"
 )
 
-# Agent order for launch
-AGENT_ORDER=("architect" "developer" "qa-engineer" "code-reviewer")
+# Role order for launch
+ROLE_ORDER=("architect" "developer" "qa-engineer" "code-reviewer")
 
 # Check dependencies
 check_dependencies() {
@@ -74,9 +85,21 @@ check_dependencies() {
         missing+=("jq")
     fi
     
+    if ! command -v tmux &> /dev/null; then
+        missing+=("tmux")
+    fi
+    
     if ! command -v gh &> /dev/null; then
         echo -e "${YELLOW}Warning: 'gh' (GitHub CLI) not found. PR features will be limited.${NC}"
-        echo -e "${YELLOW}Install with: sudo apt install gh${NC}"
+        local os=$(detect_os)
+        case "$os" in
+            macos)
+                echo -e "${YELLOW}Install with: brew install gh${NC}"
+                ;;
+            *)
+                echo -e "${YELLOW}Install with: sudo apt install gh${NC}"
+                ;;
+        esac
         echo
     fi
     
@@ -84,10 +107,28 @@ check_dependencies() {
         echo -e "${RED}Error: Missing required dependencies: ${missing[*]}${NC}"
         echo
         echo "Install them with:"
+        local os=$(detect_os)
         for dep in "${missing[@]}"; do
             case $dep in
                 jq)
-                    echo "  sudo apt install jq"
+                    case "$os" in
+                        macos)
+                            echo "  brew install jq"
+                            ;;
+                        *)
+                            echo "  sudo apt install jq"
+                            ;;
+                    esac
+                    ;;
+                tmux)
+                    case "$os" in
+                        macos)
+                            echo "  brew install tmux"
+                            ;;
+                        *)
+                            echo "  sudo apt install tmux"
+                            ;;
+                    esac
                     ;;
                 opencode)
                     echo "  curl -fsSL https://opencode.ai/install | bash"
@@ -102,7 +143,7 @@ check_dependencies() {
 initialize_standup_dirs() {
     echo -e "${BLUE}Initializing standup directory structure...${NC}"
     
-    for role in "${!AGENTS[@]}"; do
+    for role in "${!ROLES[@]}"; do
         mkdir -p "$STANDUP_DIR/$role"
         
         # Create empty tasks.json if it doesn't exist
@@ -118,7 +159,7 @@ EOF
         # Create today's log if it doesn't exist
         if [[ ! -f "$STANDUP_DIR/$role/log-$TODAY.md" ]]; then
             cat > "$STANDUP_DIR/$role/log-$TODAY.md" <<EOF
-# ${AGENTS[$role]} Log - $TODAY
+# ${ROLES[$role]} Log - $TODAY
 
 ## Morning Standup ($TIME)
 **Completed Recently:**
@@ -161,13 +202,16 @@ EOF
 ## 🟢 FYI (General updates)
 
 **[$TIME] System:**
-Standup system initialized. All agents ready to begin work.
+Standup system initialized. All roles ready to begin work.
 
 ---
 
 EOF
         echo -e "${GREEN}  ✓ Created notifications.md${NC}"
     fi
+    
+    # Record session start time for shutdown report
+    echo "$TODAY $TIME" > "$STANDUP_DIR/.session-start"
     
     echo -e "${GREEN}  ✓ Standup directories ready${NC}"
     echo
@@ -194,103 +238,130 @@ detect_os() {
     fi
 }
 
-# Launch terminal based on OS
-launch_terminal_window() {
-    local title=$1
-    local wrapper_script=$2
-    local os=$(detect_os)
+# Create tmux configuration for vim-like navigation
+setup_tmux_config() {
+    local tmux_conf="$STANDUP_DIR/.tmux.conf"
     
-    case "$os" in
-        wsl)
-            # WSL - Use Windows Terminal
-            local win_wrapper_script=$(wslpath -w "$wrapper_script" 2>/dev/null || echo "$wrapper_script")
-            if command -v wt.exe &> /dev/null; then
-                wt.exe -w new --title "Standup: $title" bash -l "$wrapper_script" &
-                echo -e "  ${GREEN}→ Launched in new Windows Terminal window${NC}"
-                return 0
-            else
-                echo -e "${RED}  ✗ Windows Terminal (wt.exe) not found${NC}"
-                return 1
-            fi
-            ;;
-            
-        macos)
-            # macOS - Try iTerm2 first, then Terminal.app
-            if [[ -d "/Applications/iTerm.app" ]]; then
-                osascript <<EOF 2>/dev/null
-tell application "iTerm"
-    activate
-    create window with default profile
-    tell current session of current window
-        write text "cd '$PROJECT_ROOT' && bash '$wrapper_script'"
-    end tell
-end tell
+    cat > "$tmux_conf" <<'EOF'
+# Vim-style pane navigation with Ctrl+hjkl
+bind -n C-h select-pane -L
+bind -n C-j select-pane -D
+bind -n C-k select-pane -U
+bind -n C-l select-pane -R
+
+# Enable mouse support
+set -g mouse on
+
+# Set status bar
+set -g status-style bg=colour235,fg=colour255
+set -g status-left-length 30
+set -g status-left '#[fg=green]AI Standup #[fg=cyan]#{session_name} '
+set -g status-right '#[fg=yellow]%Y-%m-%d %H:%M'
+
+# Pane border colors
+set -g pane-border-style fg=colour238
+set -g pane-active-border-style fg=colour39
+
+# Pane titles
+set -g pane-border-status top
+set -g pane-border-format ' #{pane_title} '
 EOF
-                if [[ $? -eq 0 ]]; then
-                    echo -e "  ${GREEN}→ Launched in new iTerm2 window${NC}"
-                    return 0
-                fi
-            fi
-            
-            # Fallback to Terminal.app
-            osascript <<EOF 2>/dev/null
-tell application "Terminal"
-    activate
-    do script "cd '$PROJECT_ROOT' && bash '$wrapper_script'"
-end tell
-EOF
-            if [[ $? -eq 0 ]]; then
-                echo -e "  ${GREEN}→ Launched in new Terminal window${NC}"
-                return 0
-            else
-                echo -e "${RED}  ✗ Failed to launch Terminal${NC}"
-                return 1
-            fi
-            ;;
-            
-        linux)
-            # Native Linux - Try various terminal emulators
-            if command -v gnome-terminal &> /dev/null; then
-                gnome-terminal --title="Standup: $title" -- bash -c "cd '$PROJECT_ROOT' && bash '$wrapper_script'" &
-                echo -e "  ${GREEN}→ Launched in new GNOME Terminal window${NC}"
-                return 0
-            elif command -v konsole &> /dev/null; then
-                konsole --new-tab -p tabtitle="Standup: $title" -e bash -c "cd '$PROJECT_ROOT' && bash '$wrapper_script'" &
-                echo -e "  ${GREEN}→ Launched in new Konsole window${NC}"
-                return 0
-            elif command -v xterm &> /dev/null; then
-                xterm -title "Standup: $title" -e bash -c "cd '$PROJECT_ROOT' && bash '$wrapper_script'" &
-                echo -e "  ${GREEN}→ Launched in new xterm window${NC}"
-                return 0
-            else
-                echo -e "${RED}  ✗ No supported terminal emulator found${NC}"
-                echo -e "${YELLOW}  Install: gnome-terminal, konsole, or xterm${NC}"
-                return 1
-            fi
-            ;;
-            
-        *)
-            echo -e "${RED}  ✗ Unsupported operating system${NC}"
-            return 1
-            ;;
-    esac
+    
+    echo "$tmux_conf"
 }
 
-# Generate standup prompt for each agent
+# Create wrapper script for role in tmux pane
+create_agent_wrapper() {
+    local role=$1
+    local session_name="$PROJECT_NAME-$role-$TODAY"
+    local prompt=$(generate_standup_prompt "$role")
+    local wrapper_script="$STANDUP_DIR/${role}-wrapper.sh"
+    local prompt_file="$STANDUP_DIR/${role}-prompt.txt"
+    
+    # Save the prompt to a file
+    echo "$prompt" > "$prompt_file"
+    
+    # Check if session exists
+    local continue_flag=""
+    if session_exists "$session_name"; then
+        continue_flag="--continue"
+    fi
+    
+    # Create wrapper script
+    cat > "$wrapper_script" <<EOF
+#!/bin/bash
+cd "$PROJECT_ROOT" || exit 1
+
+# Set pane title
+printf '\033]2;%s\033\\' "${ROLES[$role]}"
+
+# Run opencode with the prompt from file
+if [ "$continue_flag" = "--continue" ]; then
+    opencode --session "$session_name" --continue --prompt "\$(cat '$prompt_file')"
+else
+    opencode --session "$session_name" --prompt "\$(cat '$prompt_file')"
+fi
+
+# Keep pane open on exit
+echo ""
+echo "════════════════════════════════════════════════════════"
+echo "Session ended. Press Enter to close..."
+echo "════════════════════════════════════════════════════════"
+read -r
+EOF
+    
+    chmod +x "$wrapper_script"
+    echo "$wrapper_script"
+}
+
+# Generate standup prompt for each role
 generate_standup_prompt() {
     local role=$1
+    
+    # Check for previous session summary
+    local previous_summary=""
+    local latest_summary=$(ls -t "$STANDUP_DIR/$role"/session-summary-*.md 2>/dev/null | head -1)
+    
+    if [[ -n "$latest_summary" && -f "$latest_summary" ]]; then
+        local summary_date=$(basename "$latest_summary" | sed 's/session-summary-\(.*\)\.md/\1/')
+        previous_summary="
+## Previous Session Summary ($summary_date)
+
+\`\`\`
+$(cat "$latest_summary")
+\`\`\`
+
+Please review this to understand where you left off.
+"
+    fi
+    
+    # Check for previous day's log
+    local previous_log=""
+    local latest_log=$(ls -t "$STANDUP_DIR/$role"/log-*.md 2>/dev/null | grep -v "log-$TODAY.md" | head -1)
+    
+    if [[ -n "$latest_log" && -f "$latest_log" ]]; then
+        local log_date=$(basename "$latest_log" | sed 's/log-\(.*\)\.md/\1/')
+        previous_log="
+## Previous Day's Log ($log_date)
+
+Review \`.standup/$role/$(basename "$latest_log")\` for detailed history.
+"
+    fi
+    
     cat <<EOF
 Good morning! It's standup time. 🌅
 
-**Your Role:** ${AGENTS[$role]}
+**Your Role:** ${ROLES[$role]}
+**Date:** $TODAY
+**Time:** $TIME
 
 Please start by loading your skill to understand your responsibilities:
 
 \`\`\`
 /skill $role
 \`\`\`
-
-Once loaded, provide your standup update by:
+$previous_summary$previous_log
+## Your Tasks for Today
 
 1. **Check Notifications:** Read \`.standup/notifications.md\` for urgent items
 2. **Read Your Progress:**
@@ -300,76 +371,151 @@ Once loaded, provide your standup update by:
 
 After your update, wait for today's assignments and priorities.
 
-Throughout the day:
+## Throughout the Day
+
 - Update your progress files as you work
 - Check notifications every 30-60 minutes
 - Post notifications for important events
 - Work autonomously based on your assignments
 
+## End of Session
+
+When the session ends, you'll be prompted to create a summary.
+Your summary should include:
+- Key accomplishments
+- Work in progress
+- Files modified
+- Recommendations for next session
+
 Let's have a great standup! 🚀
 EOF
 }
 
-# Launch a terminal for an agent
-launch_agent() {
-    local role=$1
-    local title="${AGENTS[$role]}"
-    local session_name="$PROJECT_NAME-$role-$TODAY"
-    local prompt=$(generate_standup_prompt "$role")
+# Launch tmux session with all roles in a 2x2 grid
+launch_tmux_standup() {
+    local tmux_session="standup-$PROJECT_NAME-$TODAY"
     
-    echo -e "${BLUE}Launching ${BOLD}$title${NC}${BLUE}...${NC}"
-    echo -e "  Session: ${YELLOW}$session_name${NC}"
+    echo -e "${BOLD}Launching roles in tmux session...${NC}"
+    echo
     
-    # Check if session exists
-    local continue_flag=""
-    if session_exists "$session_name"; then
-        echo -e "  ${YELLOW}→ Continuing existing session${NC}"
-        continue_flag="--continue"
-    else
-        echo -e "  ${GREEN}→ Creating new session${NC}"
+    # Setup tmux configuration
+    local tmux_conf=$(setup_tmux_config)
+    
+    # Check if tmux session already exists
+    if tmux has-session -t "$tmux_session" 2>/dev/null; then
+        echo -e "${YELLOW}Tmux session '$tmux_session' already exists.${NC}"
+        echo -e "${YELLOW}Attaching to existing session...${NC}"
+        echo ""
+        tmux attach-session -t "$tmux_session"
+        exit 0
     fi
     
-    # Create a wrapper script for this agent session
-    local wrapper_script="$STANDUP_DIR/${role}-wrapper.sh"
-    local prompt_file="$STANDUP_DIR/${role}-prompt.txt"
+    # Create wrapper scripts for each role
+    local -a wrapper_scripts
+    local -a role_titles
     
-    # Save the prompt to a file to avoid escaping issues
-    echo "$prompt" > "$prompt_file"
+    for role in "${ROLE_ORDER[@]}"; do
+        local title="${ROLES[$role]}"
+        local session_name="$PROJECT_NAME-$role-$TODAY"
+        
+        echo -e "${BLUE}Preparing ${BOLD}$title${NC}${BLUE}...${NC}"
+        
+        # Check if session exists
+        if session_exists "$session_name"; then
+            echo -e "  ${YELLOW}→ Continuing existing session${NC}"
+        else
+            echo -e "  ${GREEN}→ Creating new session${NC}"
+        fi
+        
+        local wrapper=$(create_agent_wrapper "$role")
+        wrapper_scripts+=("$wrapper")
+        role_titles+=("$title")
+    done
     
-    # Write the script directly with actual values
-    cat > "$wrapper_script" <<EOF
-#!/bin/bash
-cd "$PROJECT_ROOT" || exit 1
-
-echo "════════════════════════════════════════════════════════"
-echo "  $title"
-echo "  Session: $session_name"
-echo "════════════════════════════════════════════════════════"
-echo ""
-
-# Run opencode with the prompt from file
-if [ "$continue_flag" = "--continue" ]; then
-    opencode --session "$session_name" --continue --prompt "\$(cat '$prompt_file')"
-else
-    opencode --session "$session_name" --prompt "\$(cat '$prompt_file')"
-fi
-
-# Keep terminal open
-echo ""
-echo "════════════════════════════════════════════════════════"
-echo "Session ended. Press Enter to close this terminal..."
-echo "════════════════════════════════════════════════════════"
-read -r
-EOF
+    echo ""
+    echo -e "${GREEN}Creating tmux session: ${BOLD}$tmux_session${NC}"
+    echo ""
     
-    chmod +x "$wrapper_script"
-    
-    # Launch terminal window using platform-specific launcher
-    if ! launch_terminal_window "$title" "$wrapper_script"; then
-        echo -e "${YELLOW}  Run manually: bash $wrapper_script${NC}"
+    # Create new tmux session (detached) - only use -f here to load config
+    if ! tmux -f "$tmux_conf" new-session -d -s "$tmux_session" -n "standup"; then
+        echo -e "${RED}ERROR: Failed to create tmux session${NC}"
+        exit 1
     fi
     
-    sleep 1  # Stagger launches to avoid race conditions
+    # Get the window ID (could be 0 or 1 depending on base-index setting)
+    local window_id
+    window_id=$(tmux list-windows -t "$tmux_session" -F "#{window_index}" | head -1)
+    
+    # All subsequent commands work on the existing session (no -f needed)
+    # Use $window_id instead of hardcoded 0
+    
+    # Pane 0: Architect (top-left) - already exists from new-session
+    if ! tmux select-pane -t "$tmux_session:$window_id.0" -T "${role_titles[0]}"; then
+        echo -e "${RED}ERROR: Failed to select pane 0${NC}"
+        exit 1
+    fi
+    
+    # Pane 1: Developer (top-right) - split horizontally from pane 0
+    if ! tmux split-window -h -t "$tmux_session:$window_id.0"; then
+        echo -e "${RED}ERROR: Failed to create pane 1${NC}"
+        exit 1
+    fi
+    tmux select-pane -t "$tmux_session:$window_id.1" -T "${role_titles[1]}"
+    
+    # Pane 2: QA Engineer (bottom-left) - split vertically from pane 0
+    if ! tmux split-window -v -t "$tmux_session:$window_id.0"; then
+        echo -e "${RED}ERROR: Failed to create pane 2${NC}"
+        exit 1
+    fi
+    tmux select-pane -t "$tmux_session:$window_id.2" -T "${role_titles[2]}"
+    
+    # Pane 3: Code Reviewer (bottom-right) - split vertically from pane 1
+    if ! tmux split-window -v -t "$tmux_session:$window_id.1"; then
+        echo -e "${RED}ERROR: Failed to create pane 3${NC}"
+        exit 1
+    fi
+    tmux select-pane -t "$tmux_session:$window_id.3" -T "${role_titles[3]}"
+    
+    # Balance the panes to make them equal size
+    tmux select-layout -t "$tmux_session:$window_id" tiled
+    
+    # Send commands to each pane
+    tmux send-keys -t "$tmux_session:$window_id.0" "bash '${wrapper_scripts[0]}'" Enter
+    tmux send-keys -t "$tmux_session:$window_id.1" "bash '${wrapper_scripts[1]}'" Enter
+    tmux send-keys -t "$tmux_session:$window_id.2" "bash '${wrapper_scripts[2]}'" Enter
+    tmux send-keys -t "$tmux_session:$window_id.3" "bash '${wrapper_scripts[3]}'" Enter
+    
+    # Select the first pane (Architect)
+    tmux select-pane -t "$tmux_session:$window_id.0"
+    
+    echo -e "${GREEN}${BOLD}✓ All roles launched in tmux!${NC}"
+    echo ""
+    echo -e "${BOLD}Your AI team is ready in a 2x2 grid layout:${NC}"
+    echo "  ┌─────────────────┬─────────────────┐"
+    echo "  │   Architect     │   Developer     │"
+    echo "  ├─────────────────┼─────────────────┤"
+    echo "  │  QA Engineer    │ Code Reviewer   │"
+    echo "  └─────────────────┴─────────────────┘"
+    echo ""
+    echo -e "${BOLD}Navigation:${NC}"
+    echo "  • Ctrl+h - Move to left pane"
+    echo "  • Ctrl+j - Move to down pane"
+    echo "  • Ctrl+k - Move to up pane"
+    echo "  • Ctrl+l - Move to right pane"
+    echo "  • Ctrl+b d - Detach from session (keeps roles running)"
+    echo "  • Ctrl+b x - Close current pane"
+    echo ""
+    echo -e "${YELLOW}Pro Tips:${NC}"
+    echo "  • Run 'standup-shutdown' to gracefully end session with summaries"
+    echo "  • Run 'standup-metrics' in another terminal to see team performance"
+    echo "  • Check '.standup/notifications.md' for role updates"
+    echo "  • To reattach: tmux attach -t $tmux_session"
+    echo ""
+    echo "Press Enter to attach to the tmux session..."
+    read
+    
+    # Attach to the session
+    tmux attach-session -t "$tmux_session"
 }
 
 # First run setup wizard
@@ -380,13 +526,13 @@ first_run_setup() {
     echo
     echo -e "${BLUE}Welcome to the AI Standup System!${NC}"
     echo
-    echo "This system creates a team of AI agents who work together:"
+    echo "This system creates a team of AI roles who work together:"
     echo "  • ${BOLD}Architect${NC} - Designs system architecture and guides technical decisions"
     echo "  • ${BOLD}Developer${NC} - Implements features and fixes bugs"
     echo "  • ${BOLD}QA Engineer${NC} - Tests features and finds bugs"
     echo "  • ${BOLD}Code Reviewer${NC} - Reviews code quality and suggests improvements"
     echo
-    echo -e "${YELLOW}Each agent maintains their own progress files and communicates via${NC}"
+    echo -e "${YELLOW}Each role maintains their own progress files and communicates via${NC}"
     echo -e "${YELLOW}a shared notification board.${NC}"
     echo
     echo "Press Enter to continue setup..."
@@ -399,10 +545,10 @@ first_run_setup() {
     echo -e "${GREEN}${BOLD}✓ Setup complete!${NC}"
     echo
     echo -e "${BOLD}Next Steps:${NC}"
-    echo "  1. Four terminal windows will open (one per agent)"
-    echo "  2. Each agent will give you a status update"
-    echo "  3. Conduct your standup by assigning work to each agent"
-    echo "  4. Agents will work autonomously and notify you of progress"
+    echo "  1. Four roles will launch in a tmux 2x2 grid layout"
+    echo "  2. Each role will give you a status update"
+    echo "  3. Conduct your standup by assigning work to each role"
+    echo "  4. Navigate between roles using Ctrl+hjkl"
     echo
     echo -e "${BOLD}Useful Commands:${NC}"
     echo "  ./bin/standup-metrics       - View team metrics dashboard"
@@ -412,9 +558,9 @@ first_run_setup() {
     echo "  cat .standup/notifications.md   - Check team notifications"
     echo
     echo -e "${BOLD}Tips:${NC}"
-    echo "  • Each agent checks notifications automatically every 30-60 minutes"
+    echo "  • Each role checks notifications automatically every 30-60 minutes"
     echo "  • Use priority levels: 🔴 URGENT, 🟡 IMPORTANT, 🟢 FYI"
-    echo "  • Agents will post to notifications.md when they need your attention"
+    echo "  • Roles will post to notifications.md when they need your attention"
     echo
     echo "Press Enter to launch your AI team..."
     read
@@ -445,25 +591,8 @@ main() {
     echo -e "${BLUE}Location:${NC} $PROJECT_ROOT"
     echo
     
-    # Launch each agent terminal
-    echo -e "${BOLD}Launching agents...${NC}"
-    echo
-    
-    for role in "${AGENT_ORDER[@]}"; do
-        launch_agent "$role"
-    done
-    
-    echo
-    echo -e "${GREEN}${BOLD}✓ All agents launched successfully!${NC}"
-    echo
-    echo -e "${BOLD}Your AI team is ready.${NC}"
-    echo "Talk to each terminal window to conduct your standup."
-    echo
-    echo -e "${YELLOW}Pro Tips:${NC}"
-    echo "  • Run './bin/standup-metrics' to see team performance"
-    echo "  • Check '.standup/notifications.md' for agent updates"
-    echo "  • Agents will check notifications every 30-60 minutes"
-    echo
+    # Launch all roles in tmux
+    launch_tmux_standup
 }
 
 main "$@"

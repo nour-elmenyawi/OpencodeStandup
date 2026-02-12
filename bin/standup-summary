@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Standup Summary Generator
 # Creates a consolidated daily summary from all agent activities
 

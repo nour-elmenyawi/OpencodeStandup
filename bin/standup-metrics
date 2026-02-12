@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Standup Metrics Dashboard
 # Analyzes agent activity and generates statistics
 

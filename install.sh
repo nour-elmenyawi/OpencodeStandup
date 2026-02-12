@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # OpenCode Standup Installation Script
 # Installs the AI standup system for managing development teams
 
@@ -14,7 +14,7 @@ NC='\033[0m'
 
 INSTALL_DIR="$HOME/.local/share/opencode-standup"
 BIN_DIR="$HOME/.local/bin"
-SKILLS_DIR="$HOME/.opencode/skills"
+SKILLS_DIR="$HOME/.config/opencode/skills"
 
 echo -e "${BOLD}╔════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BOLD}║                                                        ║${NC}"
@@ -25,6 +25,28 @@ echo ""
 
 # Check dependencies
 echo -e "${BLUE}Checking dependencies...${NC}"
+
+# Check Bash version
+if ((BASH_VERSINFO[0] < 4)); then
+    echo -e "${RED}✗ Bash 4.0 or higher is required (you have $BASH_VERSION)${NC}"
+    echo ""
+    case "$OS" in
+        macos)
+            echo "Install with:"
+            echo "  brew install bash"
+            echo ""
+            echo "Then add to your ~/.zshrc or ~/.bashrc:"
+            echo '  export PATH="/opt/homebrew/bin:$PATH"'
+            ;;
+        *)
+            echo "Install with:"
+            echo "  sudo apt install bash"
+            ;;
+    esac
+    echo ""
+    exit 1
+fi
+echo -e "${GREEN}  ✓ Bash $BASH_VERSION${NC}"
 
 if ! command -v opencode &> /dev/null; then
     echo -e "${RED}✗ OpenCode is not installed${NC}"
@@ -42,14 +64,42 @@ if ! command -v git &> /dev/null; then
 fi
 echo -e "${GREEN}  ✓ Git installed${NC}"
 
+if ! command -v tmux &> /dev/null; then
+    echo -e "${RED}✗ tmux is not installed${NC}"
+    case "$OS" in
+        macos)
+            echo -e "${YELLOW}  Install with: brew install tmux${NC}"
+            ;;
+        *)
+            echo -e "${YELLOW}  Install with: sudo apt install tmux${NC}"
+            ;;
+    esac
+    exit 1
+fi
+echo -e "${GREEN}  ✓ tmux installed${NC}"
+
 if ! command -v jq &> /dev/null; then
     echo -e "${YELLOW}⚠ jq not found (optional, needed for metrics)${NC}"
-    echo -e "${YELLOW}  Install with: sudo apt install jq${NC}"
+    case "$OS" in
+        macos)
+            echo -e "${YELLOW}  Install with: brew install jq${NC}"
+            ;;
+        *)
+            echo -e "${YELLOW}  Install with: sudo apt install jq${NC}"
+            ;;
+    esac
 fi
 
 if ! command -v gh &> /dev/null; then
     echo -e "${YELLOW}⚠ GitHub CLI not found (optional, needed for PR features)${NC}"
-    echo -e "${YELLOW}  Install with: sudo apt install gh${NC}"
+    case "$OS" in
+        macos)
+            echo -e "${YELLOW}  Install with: brew install gh${NC}"
+            ;;
+        *)
+            echo -e "${YELLOW}  Install with: sudo apt install gh${NC}"
+            ;;
+    esac
 fi
 
 echo ""
@@ -81,7 +131,7 @@ case "$OS" in
     macos)
         if [[ -d "/Applications/iTerm.app" ]]; then
             echo -e "${GREEN}  ✓ iTerm2 detected${NC}"
-        elif [[ -d "/Applications/Utilities/Terminal.app" ]]; then
+        elif [[ -d "/System/Applications/Utilities/Terminal.app" ]] || [[ -d "/Applications/Utilities/Terminal.app" ]]; then
             echo -e "${GREEN}  ✓ Terminal.app detected${NC}"
         else
             echo -e "${YELLOW}⚠ No terminal emulator detected${NC}"
@@ -156,7 +206,7 @@ done
 echo ""
 echo -e "${BLUE}Installing scripts...${NC}"
 
-for script in standup standup-metrics standup-pr-status standup-summary; do
+for script in standup standup-shutdown standup-metrics standup-pr-status standup-summary; do
     cp "$SCRIPT_DIR/bin/$script" "$BIN_DIR/$script"
     chmod +x "$BIN_DIR/$script"
     echo -e "${GREEN}  ✓ Installed $script${NC}"
@@ -169,29 +219,57 @@ echo -e "${BLUE}Checking PATH configuration...${NC}"
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
     echo -e "${YELLOW}⚠ $BIN_DIR is not in your PATH${NC}"
     echo ""
-    echo "Add the following line to your shell configuration file:"
-    echo ""
     
+    # Determine shell config file
+    SHELL_CONFIG=""
     if [[ "$SHELL" == *"zsh"* ]]; then
-        echo -e "${BOLD}  ~/.zshrc${NC}"
-        echo ""
-        echo '  export PATH="$HOME/.local/bin:$PATH"'
+        SHELL_CONFIG="$HOME/.zshrc"
     elif [[ "$SHELL" == *"bash"* ]]; then
-        echo -e "${BOLD}  ~/.bashrc${NC}"
-        echo ""
-        echo '  export PATH="$HOME/.local/bin:$PATH"'
-    else
-        echo -e "${BOLD}  Your shell configuration file${NC}"
-        echo ""
-        echo '  export PATH="$HOME/.local/bin:$PATH"'
+        SHELL_CONFIG="$HOME/.bashrc"
     fi
     
-    echo ""
-    echo "Then restart your terminal or run:"
-    if [[ "$SHELL" == *"zsh"* ]]; then
-        echo "  source ~/.zshrc"
-    elif [[ "$SHELL" == *"bash"* ]]; then
-        echo "  source ~/.bashrc"
+    if [[ -n "$SHELL_CONFIG" ]]; then
+        echo -e "Would you like to automatically add $BIN_DIR to your PATH? (y/N)"
+        read -r response
+        
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            # Check if PATH export already exists in the file
+            if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$SHELL_CONFIG" 2>/dev/null && \
+               ! grep -q 'export PATH="\$HOME/.local/bin:\$PATH"' "$SHELL_CONFIG" 2>/dev/null; then
+                echo "" >> "$SHELL_CONFIG"
+                echo '# Added by opencode-standup installer' >> "$SHELL_CONFIG"
+                echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_CONFIG"
+                echo -e "${GREEN}  ✓ Added PATH configuration to $SHELL_CONFIG${NC}"
+                echo ""
+                echo -e "${YELLOW}Run this command to apply the changes:${NC}"
+                if [[ "$SHELL" == *"zsh"* ]]; then
+                    echo "  source ~/.zshrc"
+                else
+                    echo "  source ~/.bashrc"
+                fi
+            else
+                echo -e "${BLUE}  → PATH export already exists in $SHELL_CONFIG${NC}"
+            fi
+        else
+            echo "Add the following line to your shell configuration file:"
+            echo ""
+            echo -e "${BOLD}  $(basename "$SHELL_CONFIG")${NC}"
+            echo ""
+            echo '  export PATH="$HOME/.local/bin:$PATH"'
+            echo ""
+            echo "Then restart your terminal or run:"
+            if [[ "$SHELL" == *"zsh"* ]]; then
+                echo "  source ~/.zshrc"
+            else
+                echo "  source ~/.bashrc"
+            fi
+        fi
+    else
+        echo "Add the following line to your shell configuration file:"
+        echo ""
+        echo '  export PATH="$HOME/.local/bin:$PATH"'
+        echo ""
+        echo "Then restart your terminal"
     fi
     echo ""
 else
@@ -220,10 +298,11 @@ echo ""
 echo "  2. Launch your AI standup team:"
 echo -e "     ${BLUE}standup${NC}"
 echo ""
-echo "  3. Interact with each agent in their terminal windows"
+echo "  3. Interact with each role in the tmux panes"
 echo ""
 echo -e "${BOLD}Additional Commands:${NC}"
 echo ""
+echo -e "  ${BLUE}standup-shutdown${NC}    - Gracefully end session with summaries"
 echo -e "  ${BLUE}standup-metrics${NC}     - View team performance metrics"
 echo -e "  ${BLUE}standup-summary${NC}     - Generate daily summary report"
 echo -e "  ${BLUE}standup-pr-status${NC}   - Check PR status (requires gh CLI)"

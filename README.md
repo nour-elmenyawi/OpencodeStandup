@@ -2,33 +2,33 @@
 
 > AI-powered standup meetings for your development team
 
-Automate your daily standups with four specialized AI agents that work together to manage architecture, development, QA, and code review tasks across all your projects.
+Automate your daily standups with four specialized AI roles that work together to manage architecture, development, QA, and code review tasks across all your projects.
 
 ![OpenCode Standup Demo](https://via.placeholder.com/800x400?text=OpenCode+Standup+Demo)
 
 ## Features
 
-- 🤖 **Four Specialized AI Agents**
+- 🤖 **Four Specialized AI Roles**
   - **Architect** - Designs system architecture, ensures best practices, and guides technical decisions
   - **Developer** - Implements features and fixes bugs
   - **QA Engineer** - Tests features and identifies issues
   - **Code Reviewer** - Reviews code quality and suggests improvements
 
 - 📊 **Progress Tracking**
-  - Daily narrative logs for each agent
+  - Daily narrative logs for each role
   - Structured task tracking (JSON)
   - Shared notification system
 
 - 🚀 **Per-Project Isolation**
-  - Each project gets its own agent team
+  - Each project gets its own role team
   - Progress files stay in project directory
   - Independent sessions per project
 
-- 💻 **Automatic Terminal Management**
-  - Launches 4 separate terminal windows automatically
-  - Supports Windows Terminal (WSL), iTerm2/Terminal.app (macOS), and GNOME Terminal/Konsole/xterm (Linux)
-  - Persistent sessions (resume anytime)
-  - Session naming: `<project>-<role>-<date>`
+- 💻 **Tmux-Based Interface**
+  - All 4 roles in a single terminal window
+  - 2x2 grid layout for easy viewing
+  - Vim-style navigation (Ctrl+hjkl)
+  - Mouse support enabled
 
 - 📈 **Built-in Metrics & Reporting**
   - View team performance metrics
@@ -38,13 +38,21 @@ Automate your daily standups with four specialized AI agents that work together 
 ## Requirements
 
 - [OpenCode](https://opencode.ai) - AI coding assistant
+- Bash 4.0+ (macOS users: `brew install bash`)
 - Git
-- Terminal emulator (platform-specific):
-  - **Windows (WSL):** Windows Terminal
-  - **macOS:** iTerm2 or Terminal.app (built-in)
-  - **Linux:** GNOME Terminal, Konsole, or xterm
+- tmux - Terminal multiplexer for managing multiple roles
 - `jq` (optional, for metrics)
 - `gh` GitHub CLI (optional, for PR features)
+
+**Installation (macOS):**
+```bash
+brew install bash tmux jq gh
+```
+
+**Installation (Linux):**
+```bash
+sudo apt install bash tmux jq gh
+```
 
 ## Quick Start
 
@@ -61,7 +69,7 @@ cd opencode-standup
 
 The installer will:
 1. Check dependencies
-2. Install AI agent skills to `~/.opencode/skills/`
+2. Install AI role skills to `~/.config/opencode/skills/`
 3. Install scripts to `~/.local/bin/`
 4. Configure your PATH (if needed)
 
@@ -75,12 +83,15 @@ cd ~/my-project
 standup
 ```
 
-Four terminal windows will open, each with an agent ready to provide their standup update.
+A tmux session will launch with all 4 roles in a 2x2 grid layout. Navigate between roles using Ctrl+hjkl (vim-style navigation).
 
-**Platform Notes:**
-- **Windows/WSL:** Opens new Windows Terminal windows
-- **macOS:** Opens new iTerm2 windows (or Terminal.app if iTerm2 not installed)
-- **Linux:** Opens new GNOME Terminal, Konsole, or xterm windows (whichever is available)
+**Tmux Navigation:**
+- **Ctrl+h** - Move to left pane
+- **Ctrl+j** - Move down
+- **Ctrl+k** - Move up
+- **Ctrl+l** - Move to right pane
+- **Ctrl+b d** - Detach from session (roles keep running)
+- **Ctrl+b x** - Close current pane
 
 ## How It Works
 
@@ -112,9 +123,9 @@ Each project gets its own `.standup/` directory:
 echo ".standup/" >> .gitignore
 ```
 
-### 2. Agent Workflow
+### 2. Role Workflow
 
-Each agent follows this workflow:
+Each role follows this workflow:
 
 1. **Morning Standup**
    - Load their specialized skill
@@ -129,13 +140,13 @@ Each agent follows this workflow:
    - Check for new notifications periodically
 
 3. **Communication**
-   - Agents communicate via `.standup/notifications.md`
+   - Roles communicate via `.standup/notifications.md`
    - Priority levels: 🔴 URGENT, 🟡 IMPORTANT, 🟢 FYI
-   - Cross-agent collaboration on tasks
+   - Cross-role collaboration on tasks
 
 ### 3. Multiple Projects
 
-Run standup in different projects - each gets isolated agents:
+Run standup in different projects - each gets isolated roles:
 
 ```bash
 # Project 1
@@ -153,7 +164,7 @@ standup
 
 | Command | Description |
 |---------|-------------|
-| `standup` | Launch all four agents in separate windows |
+| `standup` | Launch all four roles in a tmux 2x2 grid |
 | `standup-metrics` | View team performance dashboard |
 | `standup-summary` | Generate daily summary report |
 | `standup-pr-status` | Check PR status (requires `gh` CLI) |
@@ -174,9 +185,9 @@ standup-summary --date 2024-01-20
 standup-pr-status
 ```
 
-## Agent Capabilities
+## Role Capabilities
 
-### Architect Agent
+### Architect Role
 
 **Responsibilities:**
 - Design system architecture and infrastructure
@@ -201,7 +212,7 @@ standup-pr-status
 - Ensures scalable and maintainable solutions
 - Prevents technical debt before it accumulates
 
-### Developer Agent
+### Developer Role
 
 **Responsibilities:**
 - Implement new features
@@ -216,7 +227,7 @@ standup-pr-status
 - Git workflow
 - Test writing
 
-### QA Engineer Agent
+### QA Engineer Role
 
 **Responsibilities:**
 - Test new features
@@ -231,7 +242,7 @@ standup-pr-status
 - Bug reporting
 - Quality metrics
 
-### Code Reviewer Agent
+### Code Reviewer Role
 
 **Responsibilities:**
 - Review pull requests
@@ -248,12 +259,14 @@ standup-pr-status
 
 ## Configuration
 
-### Customizing Agents
+### Customizing Roles
 
-Agent skills are located in `~/.opencode/skills/`:
+Role skills are located in `~/.config/opencode/skills/`:
 
 ```bash
-~/.opencode/skills/
+~/.config/opencode/skills/
+├── architect/
+│   └── SKILL.md
 ├── developer/
 │   └── SKILL.md
 ├── qa-engineer/
@@ -262,7 +275,7 @@ Agent skills are located in `~/.opencode/skills/`:
     └── SKILL.md
 ```
 
-Edit these files to customize agent behavior.
+Edit these files to customize role behavior.
 
 ### Session Naming
 
@@ -294,7 +307,7 @@ If Windows Terminal windows don't open:
 
 ### Skills Not Found
 
-If agents can't find their skills:
+If roles can't find their skills:
 
 1. **Reinstall skills:**
    ```bash
@@ -304,7 +317,7 @@ If agents can't find their skills:
 
 2. **Verify skills exist:**
    ```bash
-   ls ~/.opencode/skills/
+   ls ~/.config/opencode/skills/
    ```
 
 ### Command Not Found
@@ -337,7 +350,8 @@ opencode-standup/
 │   ├── standup-metrics    # Metrics dashboard
 │   ├── standup-pr-status  # PR status checker
 │   └── standup-summary    # Summary generator
-├── skills/                 # Agent skills
+├── skills/                 # Role skills
+│   ├── architect/
 │   ├── developer/
 │   ├── qa-engineer/
 │   └── code-reviewer/
@@ -358,17 +372,17 @@ Contributions are welcome! Please:
 
 ## Roadmap
 
-- [ ] Support for custom agent configurations
+- [ ] Support for custom role configurations
 - [ ] Slack integration for notifications
 - [ ] Web dashboard for team metrics
-- [ ] Support for additional agents (DevOps, Security, etc.)
+- [ ] Support for additional roles (DevOps, Security, etc.)
 - [ ] Integration with project management tools
 - [ ] CI/CD pipeline integration
 
 ## FAQ
 
-**Q: Do the agents run in the background?**  
-A: No, agents are conversational and require your interaction. They maintain context through session persistence.
+**Q: Do the roles run in the background?**  
+A: No, roles are conversational and require your interaction. They maintain context through session persistence.
 
 **Q: Can I use this with non-Git projects?**  
 A: Yes, but some features (like PR status) won't work. The `.standup/` directory will be created in your current directory.
@@ -376,11 +390,11 @@ A: Yes, but some features (like PR status) won't work. The `.standup/` directory
 **Q: How much does this cost?**  
 A: The tool is free and open-source. OpenCode usage is subject to their pricing.
 
-**Q: Can I customize the agents?**  
-A: Yes! Edit the skill files in `~/.opencode/skills/` to customize agent behavior.
+**Q: Can I customize the roles?**  
+A: Yes! Edit the skill files in `~/.config/opencode/skills/` to customize role behavior.
 
-**Q: Will agents make commits automatically?**  
-A: No, agents only commit when you explicitly ask them to.
+**Q: Will roles make commits automatically?**  
+A: No, roles only commit when you explicitly ask them to.
 
 ## License
 
