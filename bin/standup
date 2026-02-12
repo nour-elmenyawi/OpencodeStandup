@@ -476,46 +476,52 @@ launch_tmux_standup() {
     fi
     tmux select-pane -t "$tmux_session:$window_id.3" -T "${role_titles[3]}"
     
-    # Balance the 2x2 grid first
+    # Balance the panes to make them equal size
     tmux select-layout -t "$tmux_session:$window_id" tiled
     
-    # Pane 4: User Terminal (bottom widescreen) - split from bottom-left (pane 2)
-    # When we split pane 2, the NEW pane takes pane 2's number, and old pane 2 becomes pane 4
-    if ! tmux split-window -v -t "$tmux_session:$window_id.2" -l 12; then
-        echo -e "${RED}ERROR: Failed to create pane 4 (user terminal)${NC}"
-        exit 1
+    # Send commands to each pane
+    tmux send-keys -t "$tmux_session:$window_id.0" "bash '${wrapper_scripts[0]}'" Enter
+    tmux send-keys -t "$tmux_session:$window_id.1" "bash '${wrapper_scripts[1]}'" Enter
+    tmux send-keys -t "$tmux_session:$window_id.2" "bash '${wrapper_scripts[2]}'" Enter
+    tmux send-keys -t "$tmux_session:$window_id.3" "bash '${wrapper_scripts[3]}'" Enter
+    
+    # Pane 4: User Terminal - add a 5th pane at the bottom for manual commands
+    # Use percentage (-p) instead of lines (-l) to avoid "size missing" error
+    if tmux split-window -v -t "$tmux_session:$window_id.2" -p 25 2>/dev/null; then
+        # Split succeeded - new pane becomes active, set it up
+        tmux select-pane -T "User Terminal"
+        tmux send-keys "cd '$PROJECT_ROOT'" Enter
+        tmux send-keys "clear" Enter
+        tmux send-keys "echo '═══════════════════════════════════════════════════════════════'" Enter
+        tmux send-keys "echo '  User Terminal - Run manual commands in: $PROJECT_NAME'" Enter
+        tmux send-keys "echo '═══════════════════════════════════════════════════════════════'" Enter
+        HAS_TERMINAL=true
+    else
+        HAS_TERMINAL=false
     fi
-    # The new split pane becomes pane 2, and the old pane 2 (QA) becomes pane 4
-    # So now: pane 0=Arch, pane 1=Dev, pane 2=Terminal, pane 3=Reviewer, pane 4=QA
-    tmux select-pane -t "$tmux_session:$window_id.2" -T "User Terminal"
-    
-    # Send commands to each AI role pane (accounting for renumbering)
-    tmux send-keys -t "$tmux_session:$window_id.0" "bash '${wrapper_scripts[0]}'" Enter  # Architect
-    tmux send-keys -t "$tmux_session:$window_id.1" "bash '${wrapper_scripts[1]}'" Enter  # Developer
-    tmux send-keys -t "$tmux_session:$window_id.4" "bash '${wrapper_scripts[2]}'" Enter  # QA (moved to pane 4!)
-    tmux send-keys -t "$tmux_session:$window_id.3" "bash '${wrapper_scripts[3]}'" Enter  # Code Reviewer
-    
-    # Setup the user terminal pane (now pane 2) with project context
-    tmux send-keys -t "$tmux_session:$window_id.2" "cd '$PROJECT_ROOT'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.2" "clear" Enter
-    tmux send-keys -t "$tmux_session:$window_id.2" "echo '═══════════════════════════════════════════════════════════════'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.2" "echo '  User Terminal - Run manual commands in: $PROJECT_NAME'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.2" "echo '═══════════════════════════════════════════════════════════════'" Enter
-    tmux send-keys -t "$tmux_session:$window_id.2" "echo ''" Enter
     
     # Select the first pane (Architect)
     tmux select-pane -t "$tmux_session:$window_id.0"
     
     echo -e "${GREEN}${BOLD}✓ All roles launched in tmux!${NC}"
     echo ""
-    echo -e "${BOLD}Your AI team is ready with 5 panes:${NC}"
-    echo "  ┌─────────────────┬─────────────────┐"
-    echo "  │   Architect     │   Developer     │"
-    echo "  ├─────────────────┼─────────────────┤"
-    echo "  │  QA Engineer    │ Code Reviewer   │"
-    echo "  ├─────────────────┴─────────────────┤"
-    echo "  │      User Terminal (manual)       │"
-    echo "  └───────────────────────────────────┘"
+    if [ "$HAS_TERMINAL" = true ]; then
+        echo -e "${BOLD}Your AI team is ready with 5 panes:${NC}"
+        echo "  ┌─────────────────┬─────────────────┐"
+        echo "  │   Architect     │   Developer     │"
+        echo "  ├─────────────────┼─────────────────┤"
+        echo "  │  QA Engineer    │ Code Reviewer   │"
+        echo "  ├─────────────────┴─────────────────┤"
+        echo "  │      User Terminal (manual)       │"
+        echo "  └───────────────────────────────────┘"
+    else
+        echo -e "${BOLD}Your AI team is ready in a 2x2 grid layout:${NC}"
+        echo "  ┌─────────────────┬─────────────────┐"
+        echo "  │   Architect     │   Developer     │"
+        echo "  ├─────────────────┼─────────────────┤"
+        echo "  │  QA Engineer    │ Code Reviewer   │"
+        echo "  └─────────────────┴─────────────────┘"
+    fi
     echo ""
     echo -e "${BOLD}Navigation:${NC}"
     echo "  • Ctrl+h - Move to left pane"
