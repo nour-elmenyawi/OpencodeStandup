@@ -83,7 +83,18 @@ cd ~/my-project
 standup
 ```
 
-A tmux session will launch with all 4 roles in a 2x2 grid layout. Navigate between roles using Ctrl+hjkl (vim-style navigation).
+A tmux session will launch with 5 panes - 4 AI roles in a 2x2 grid and a user terminal at the bottom. Navigate between panes using Ctrl+hjkl (vim-style navigation).
+
+**Layout:**
+```
+┌─────────────────┬─────────────────┐
+│   Architect     │   Developer     │
+├─────────────────┼─────────────────┤
+│  QA Engineer    │ Code Reviewer   │
+├─────────────────┴─────────────────┤
+│      User Terminal (manual)       │
+└───────────────────────────────────┘
+```
 
 **Tmux Navigation:**
 - **Ctrl+h** - Move to left pane
